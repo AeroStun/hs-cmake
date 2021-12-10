@@ -14,7 +14,8 @@
 module CMake.Commands.Set (set) where
 import           CMake.Error             (CmErrorKind (..), cmFormattedError,
                                           raiseArgumentCountError)
-import           CMake.Interpreter.State
+import           CMake.Interpreter.State (CmBuiltinCommand, CmScope (..),
+                                          CmState (..), setVariable)
 import           Data.List               (intercalate)
 
 set :: CmBuiltinCommand
