@@ -14,16 +14,14 @@
 module CMake.Interpreter (processFile, cmPrelude) where
 
 import           CMake.AST.Defs
+import           CMake.Commands
 import           CMake.Error                 (CmError (..), CmErrorKind (..),
-                                              cmFormattedError,
-                                              raiseArgumentCountError)
+                                              cmFormattedError)
 import           CMake.Interpreter.Arguments (expandArguments)
-import           CMake.Interpreter.Base      (controlFlowCommands)
 import           CMake.Interpreter.State
 import qualified Data.CaseInsensitive        as CI
 import           Data.Functor                (($>))
 import           Data.HashMap.Strict         ((!?))
-import           Data.List                   (intercalate)
 
 processFile :: File -> CmState -> IO (Maybe CmState)
 processFile = processStatements
@@ -59,19 +57,6 @@ cmPrelude = registerCommand "simple_message" (CmBuiltinCommand simpleMessage)
           $ registerCommand "dbg_printvar" (CmBuiltinCommand dbgPrintvar)
           $ registerCommand "set" (CmBuiltinCommand set) emptyState
   where
-    set :: CmBuiltinCommand
-    set [] callSite _ = raiseArgumentCountError "set" callSite
-    set [name] _ s@CmState{currentScope} = pure $ Just s{currentScope=setVariable name "" currentScope}
-    set (name : values) _ s@CmState{currentScope}
-      | last values /= "PARENT_SCOPE" =
-          pure $ Just s{currentScope=set' name values currentScope}
-    set (name : _) callSite s@CmState{currentScope=CmScope{scopeParent=Nothing}} =
-      Just s <$ cmFormattedError AuthorWarning (Just "set") (" Cannot set \"" ++ name ++ "\": current scope has no parent.") callSite
-    set (name : values) _ s@CmState{currentScope=CmScope{scopeParent=Just scope}} =
-      pure $ Just s{currentScope=(currentScope s){scopeParent=Just $ set' name values scope}}
-    set' :: String -> [String] -> CmScope -> CmScope
-    set' name values scope = setVariable name (intercalate ";" values) scope
-
     dbgPrintvar :: CmBuiltinCommand
     dbgPrintvar [name] _ s@CmState{currentScope} = putStrLn (name ++ ": " ++ maybe "<unset>" (\v -> "\""++v++"\"") (readVariable name currentScope)) $> Just s
     dbgPrintvar _ caller _ = pure Nothing
