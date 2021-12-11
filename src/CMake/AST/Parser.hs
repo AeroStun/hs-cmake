@@ -10,6 +10,7 @@
 -- CMake grammar productions parsers
 ----------------------------------------------------------------------------
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 module CMake.AST.Parser (
   file,
   statement,
@@ -153,7 +154,7 @@ separatedArguments = maybeToList <$> try (some separation *> optional argument)
                  <|> parenthesize <$> (many separation *> between (char '(') (char ')') arguments)
   where
     parenthesize :: Arguments -> Arguments
-    parenthesize = (BracketArgument "(" :) . (++ [BracketArgument ")"])
+    parenthesize = ((,BracketArgument) "(" :) . (++ [(")", BracketArgument)])
 
 separation :: Parser ()
 separation = void space <|> lineEnding
@@ -166,18 +167,18 @@ bracketArgument :: Parser Argument
 bracketArgument = do
     opening <- char '[' *> many (char '=') <* char '['
     let closing = string $ "]" <> opening <> "]"
-    BracketArgument <$> anyChar `manyTill` try closing
+    (,BracketArgument) <$> anyChar `manyTill` try closing
 
 
 quotedArgument :: Parser Argument
-quotedArgument = QuotedArgument . catMaybes <$> many quotedElement `surroundedBy` char '"'
+quotedArgument = (,QuotedArgument) . catMaybes <$> many quotedElement `surroundedBy` char '"'
   where
     quotedElement :: Parser (Maybe Char)
     quotedElement = Just <$> (noneOf "\"" <|> try escapeSequence)
                 <|> (char '\\' *> newline $> Nothing)
 
 unquotedArgument :: Parser Argument
-unquotedArgument = UnquotedArgument <$> some (satisfy unElem <|> escapeSequence)
+unquotedArgument = (,UnquotedArgument) <$> some (satisfy unElem <|> escapeSequence)
   where
     unElem :: Char -> Bool
     unElem c = c `BS.notElem` "()#\"" && not (isSpace c)

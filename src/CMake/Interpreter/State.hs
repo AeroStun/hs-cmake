@@ -27,21 +27,21 @@ import           CMake.AST.Defs
 import           Control.Applicative  ((<|>))
 import           Data.CaseInsensitive (CI)
 import qualified Data.CaseInsensitive as CI
-import           Data.HashMap.Strict  (HashMap, insert, (!?))
+import           Data.HashMap.Strict  (HashMap, insert, member, (!?))
 import qualified Data.HashMap.Strict  as HMap (empty)
 
 -- | interpreter state
 data CmState = CmState { currentScope :: CmScope
                        , commands     :: CommandMap
-                       }
+                       } deriving Show
 
-type VarMap = HashMap (CI String) String
+type VarMap = HashMap String String
 
 -- | variable scope
 data CmScope = CmScope { scopeIntroducer :: Maybe CommandInvocation
                        , scopeVars       :: VarMap
                        , scopeParent     :: Maybe CmScope
-                       }
+                       } deriving Show
 
 type CommandMap = HashMap (CI String) CmCommand
 
@@ -49,7 +49,11 @@ type CommandMap = HashMap (CI String) CmCommand
 data CmCommand = CmFunction ScopeBlock
                | CmBuiltinCommand CmBuiltinCommand
 
-type CmBuiltinCommand = [String] -> SourceLocation -> CmState -> IO (Maybe CmState)
+instance Show CmCommand where
+  show (CmFunction s)       = "(CmFunction " ++ show s ++ ")"
+  show (CmBuiltinCommand _) = "<builtin>"
+
+type CmBuiltinCommand =  [String] -> SourceLocation -> CmState -> IO (Maybe CmState)
 
 -- | empty state
 emptyState :: CmState
@@ -61,7 +65,7 @@ emptyScope = CmScope Nothing HMap.empty Nothing
 
 -- | checks the existence of a variable in the current scope and above
 hasVariable :: String -> CmScope -> Bool
-hasVariable name CmScope{scopeVars, scopeParent} = elem name scopeVars || searchNext scopeParent
+hasVariable name CmScope{scopeVars, scopeParent} = name `member` scopeVars || searchNext scopeParent
   where
     searchNext :: Maybe CmScope -> Bool
     searchNext Nothing      = False
@@ -69,7 +73,7 @@ hasVariable name CmScope{scopeVars, scopeParent} = elem name scopeVars || search
 
 -- | read a variable's value in the current scope and above
 readVariable :: String -> CmScope -> Maybe String
-readVariable name CmScope{scopeVars, scopeParent} = (scopeVars !? CI.mk name) <|> searchNext scopeParent
+readVariable name CmScope{scopeVars, scopeParent} = (scopeVars !? name) <|> searchNext scopeParent
    where
      searchNext :: Maybe CmScope -> Maybe String
      searchNext Nothing      = Nothing
@@ -77,7 +81,7 @@ readVariable name CmScope{scopeVars, scopeParent} = (scopeVars !? CI.mk name) <|
 
 -- | set a variable's value in the current scope
 setVariable :: String -> String -> CmScope -> CmScope
-setVariable name value s@CmScope{scopeVars} =  s{scopeVars=insert (CI.mk name) value scopeVars}
+setVariable name value s@CmScope{scopeVars} =  s{scopeVars=insert name value scopeVars}
 
 -- | registers a command by name in the state
 registerCommand :: String -> CmCommand -> CmState -> CmState

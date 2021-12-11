@@ -7,41 +7,35 @@
 -- Stability   :  experimental
 -- Portability :  non-portable
 --
--- Argument processing functions
+-- Arguments processing functions
 ----------------------------------------------------------------------------
 module CMake.Interpreter.Arguments (
+  autoDeref,
   expandArguments
   ) where
-import           CMake.AST.Defs          (Argument (..), Arguments,
-                                          VariableReference (..),
+import           CMake.AST.Defs          (Argument, ArgumentKind (..),
+                                          Arguments, VariableReference (..),
                                           VariableReferenceSection (..))
-import qualified CMake.AST.Parser        as AST (arguments, variableReference)
+import qualified CMake.AST.Parser        as AST (variableReference)
 import           CMake.Interpreter.State (CmScope (..), readVariable)
+import           CMake.List              (splitCmList)
 import           Control.Applicative     (some, (<|>))
-import           Control.Monad           (void)
-import           Data.Either.Combinators (leftToMaybe)
-import           Data.Functor            (($>))
 import           Data.Maybe              (fromMaybe)
 import           Text.Trifecta           (ErrInfo (..), Parser, Result (..),
-                                          anyChar, char, eof, foldResult, many,
-                                          notChar, parseString, semi, sepBy,
-                                          sepEndBy, string, try)
+                                          char, eof, many, notChar, parseString)
+
+autoDeref :: String -> CmScope -> String
+autoDeref name s = fromMaybe name $ readVariable name s
 
 expandArguments :: Arguments -> CmScope -> Maybe [String]
 expandArguments [] _  = Just []
 expandArguments (x:xs) s = (expandArgument x s :: Maybe [String]) >>= (\c -> (c++) <$> expandArguments xs s)
 
 expandArgument :: Argument -> CmScope -> Maybe [String]
-expandArgument  (BracketArgument str) _ = Just [str]
-expandArgument (QuotedArgument str) s = (:[]) <$> expandString str s
-expandArgument (UnquotedArgument str) s = expandString str s >>= (resultToMaybe . parseString anchorArgs mempty)
-  where
-    resultToMaybe :: Result [String] -> Maybe [String]
-    resultToMaybe = foldResult (const Nothing) Just
-    anchorArgs :: Parser [String]
-    anchorArgs = many unescapeSemi `sepEndBy` char ';' <* eof
-    unescapeSemi :: Parser Char
-    unescapeSemi = (string "\\;" $> ';') <|> notChar ';'
+expandArgument  (str, BracketArgument) _ = Just [str]
+expandArgument (str, QuotedArgument) s   = (:[]) <$> expandString str s
+expandArgument (str, UnquotedArgument) s = splitCmList <$> expandString str s
+
 
 expandString :: String -> CmScope -> Maybe String
 expandString str s = case parseString (expandingArgParse s) mempty str of

@@ -22,7 +22,8 @@ module CMake.AST.Defs (
   CommandInvocation(..),
   Identifier(..),
   Arguments,
-  Argument(..),
+  Argument,
+  ArgumentKind(..),
   VariableReference(..),
   VariableReferenceSection(..),
   builtinLocation
@@ -30,6 +31,7 @@ module CMake.AST.Defs (
 
 import           Data.ByteString (ByteString)
 import           Data.Int        (Int64)
+import Data.String (IsString)
 
 
 
@@ -71,10 +73,10 @@ newtype Identifier = Identifier String deriving (Eq, Show)
 
 type Arguments = [Argument]
 
-
-data Argument = BracketArgument String
-              | QuotedArgument String
-              | UnquotedArgument String
+type Argument = (String, ArgumentKind)
+data ArgumentKind = BracketArgument
+              | QuotedArgument
+              | UnquotedArgument
               deriving (Eq, Show)
 
 

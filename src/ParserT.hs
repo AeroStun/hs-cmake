@@ -22,6 +22,7 @@ module ParserT (
   satisfy,
   tok,
   notTok,
+  toks,
   oneOf,
   chainl,
   chainl1,
@@ -30,6 +31,7 @@ module ParserT (
   ) where
 import           Control.Applicative (Alternative (..))
 import           Control.Monad       (MonadPlus (..), void)
+import Data.Foldable (traverse_)
 
 
 -- | Simple parser for a given token-type and result-type
@@ -101,6 +103,9 @@ tok c = satisfy (c ==)
 notTok :: Eq t => t -> ParserT t t
 notTok c = satisfy (c /=)
 {-# INLINE notTok #-}
+
+toks :: Eq t => [t] -> ParserT t [t]
+toks = traverse tok
 
 oneOf :: Eq t => [t] -> ParserT t t
 oneOf s = satisfy (`elem` s)

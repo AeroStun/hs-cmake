@@ -24,9 +24,12 @@ dependencies:
 - bytestring
 - case-insensitive
 - containers
+- directory
 - either
+- filepath
 - parsers
 - prettyprinter
+- transformers
 - trifecta
 - unordered-containers
 
