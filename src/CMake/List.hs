@@ -10,14 +10,17 @@
 -- CMake list handling utilities
 ----------------------------------------------------------------------------
 {-# LANGUAGE LambdaCase #-}
-module CMake.List (splitCmList) where
+module CMake.List (joinCmList, splitCmList) where
 import           Control.Applicative     ((<|>))
 import           Data.Functor            (($>))
+import           Data.List               (intercalate)
 import           Text.Parser.Char        (char, notChar, string)
 import           Text.Parser.Combinators (eof, many, sepBy)
 import           Text.Trifecta.Parser    (Parser, parseString)
 import           Text.Trifecta.Result    (Result (..))
 
+joinCmList :: [String] -> String
+joinCmList = intercalate ";"
 
 splitCmList :: String -> [String]
 splitCmList = fromResult . parseString anchorArgs mempty

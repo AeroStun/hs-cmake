@@ -16,7 +16,7 @@ import           CMake.Error             (CmErrorKind (..), cmFormattedError,
                                           raiseArgumentCountError)
 import           CMake.Interpreter.State (CmBuiltinCommand, CmScope (..),
                                           CmState (..), setVariable)
-import           Data.List               (intercalate)
+import           CMake.List              (joinCmList)
 
 set :: CmBuiltinCommand
 set [] callSite _ = raiseArgumentCountError "set" callSite
@@ -30,5 +30,5 @@ set (name : values) _ s@CmState{currentScope=CmScope{scopeParent=Just scope}} =
   pure $ Just s{currentScope=(currentScope s){scopeParent=Just $ set' name values scope}}
 
 set' :: String -> [String] -> CmScope -> CmScope
-set' name values = setVariable name (intercalate ";" values)
+set' name values = setVariable name (joinCmList values)
 

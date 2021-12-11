@@ -20,13 +20,15 @@ import           CMake.Commands
 import           CMake.Cond.Eval             (evalCond)
 import           CMake.Cond.Parser           (condition)
 import           CMake.Error                 (CmError (..), CmErrorKind (..),
-                                              cmFormattedError)
-import           CMake.Interpreter.Arguments (expandArguments)
+                                              cmFormattedError,
+                                              raiseArgumentCountError)
+import           CMake.Interpreter.Arguments (expandArguments, applyFuncArgs)
 import           CMake.Interpreter.State
 import           Control.Monad.Trans.Maybe   (MaybeT (..))
 import qualified Data.CaseInsensitive        as CI
 import           Data.Foldable               (foldlM)
-import           Data.Functor                (($>))
+import           Data.Function               (on)
+import           Data.Functor                (void, ($>))
 import           Data.HashMap.Strict         ((!?))
 import           ParserT                     (parseList)
 
@@ -47,9 +49,9 @@ processStatement (InvocationStatement cmd) s = processInvocation cmd s
 processStatement (ConditionalStatement (ConditionalChain first@(ConditionalBlock intro stmt) cmds outro)) s = do
     r <- foldMaybesM (flip processCondBlock) (s, True) (first : cmds)
     return $ fst <$> r
-processStatement (MacroStatement b@(ScopeBlock (CommandInvocation _ [(name, _)] _) _ _)) s = pure $ Just $ registerCommand name (CmFunction b) s
+processStatement (MacroStatement b@(ScopeBlock (CommandInvocation _ ((name, _):_) _) _ _)) s = pure $ Just $ registerCommand name (CmFunction b) s
 processStatement (MacroStatement _) _ = putStrLn "DANGER: Macro unnamed" $> Nothing -- FIXME hoist to parser
-processStatement (FunctionStatement b@(ScopeBlock (CommandInvocation _ [(name, _)] _) _ _)) s = pure $ Just $ registerCommand name (CmFunction b) s
+processStatement (FunctionStatement b@(ScopeBlock (CommandInvocation _ ((name, _): _) _) _ _)) s = pure $ Just $ registerCommand name (CmFunction b) s
 processStatement (FunctionStatement _) _ = putStrLn "DANGER: Function unnamed" $> Nothing -- FIXME hoist to parser
 processStatement (ForeachStatement _) s = putStrLn "Unimplemented foreach command" $> Nothing
 processStatement (WhileStatement _) s = putStrLn "Unimplemented while command" $> Nothing
@@ -68,12 +70,14 @@ processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) intro
 processInvocation :: CommandInvocation -> CmState -> IO (Maybe CmState)
 processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState {commands, currentScope} =
   case commands !? CI.mk name of
-    Just (CmFunction (ScopeBlock (CommandInvocation (Identifier cfName) _ _) stmts _)) ->
-      let state = if CI.mk cfName == CI.mk "function" -- functions introduce scope, macros do not
-                  then s{currentScope=emptyScope{scopeParent=Just currentScope}}
-                  else s
-      -- FIXME process args
-      in processStatements stmts state
+    Just (CmFunction (ScopeBlock (CommandInvocation (Identifier cfName) (_:fArgs) _) stmts _))
+      | ((<) `on` void) args fArgs -> raiseArgumentCountError name callSite
+      | otherwise ->
+        let state = if CI.mk cfName == CI.mk "function" -- functions introduce scope, macros do not
+                    then s{currentScope=applyFuncArgs fArgs args emptyScope{scopeParent=Just currentScope}}
+                    else s
+        -- FIXME process macro args
+        in processStatements stmts state
     Just (CmBuiltinCommand bc) ->
       case expandArguments args currentScope of
         Just eargs -> bc eargs callSite s
@@ -81,7 +85,7 @@ processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState 
     _ -> Nothing <$ cmFormattedError FatalError (Just name) ("Unknown CMake command \"" ++ name ++ "\".") callSite
 
 cmPrelude :: CmState
-cmPrelude = registerCommand "simple_message" (CmBuiltinCommand simpleMessage)
+cmPrelude = registerCommand "message" (CmBuiltinCommand simpleMessage)
           $ registerCommand "dbg_printvar" (CmBuiltinCommand dbgPrintvar)
           $ registerCommand "set" (CmBuiltinCommand set) emptyState
   where
