@@ -27,6 +27,7 @@ dependencies:
 - directory
 - either
 - filepath
+- monad-loops
 - parsers
 - prettyprinter
 - transformers

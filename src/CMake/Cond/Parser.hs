@@ -77,6 +77,7 @@ binaryOpName = "IN_LIST"               -$> InList
            <|> "MATCHES"               -$> Matches
            <|> "LESS"                  -$> Less
            <|> "GREATER"               -$> Greater
+           <|> "EQUAL"                 -$> Equal
            <|> "LESS_EQUAL"            -$> LessEqual
            <|> "GREATER_EQUAL"         -$> GreaterEqual
            <|> "STRLESS"               -$> StrLess

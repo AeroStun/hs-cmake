@@ -55,6 +55,7 @@ data BinaryOp =
               | Matches
               | Less
               | Greater
+              | Equal
               | LessEqual
               | GreaterEqual
               | StrLess

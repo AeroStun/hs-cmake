@@ -77,6 +77,7 @@ evalBinary IsNewerThan         l r s = undefined
 evalBinary Matches             _ _ _ = putStrLn "Unsupported check MATCHES" $> False
 evalBinary Less                l r s = binaryAutoDeref (<) readMaybeInt l r s
 evalBinary Greater             l r s = binaryAutoDeref (>) readMaybeInt l r s
+evalBinary Equal               l r s = binaryAutoDeref (==) readMaybeInt l r s
 evalBinary LessEqual           l r s = binaryAutoDeref (<=) readMaybeInt l r s
 evalBinary GreaterEqual        l r s = binaryAutoDeref (>=) readMaybeInt l r s
 evalBinary StrLess             l r s = binaryAutoDeref (<) Just l r s

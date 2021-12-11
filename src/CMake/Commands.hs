@@ -10,6 +10,8 @@
 -- Index of commands
 ----------------------------------------------------------------------------
 module CMake.Commands (
+  module CMake.Commands.CMakePolicy,
   module CMake.Commands.Set
   ) where
 import           CMake.Commands.Set
+import           CMake.Commands.CMakePolicy

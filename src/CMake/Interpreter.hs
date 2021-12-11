@@ -22,14 +22,16 @@ import           CMake.Cond.Parser           (condition)
 import           CMake.Error                 (CmError (..), CmErrorKind (..),
                                               cmFormattedError,
                                               raiseArgumentCountError)
-import           CMake.Interpreter.Arguments (expandArguments, applyFuncArgs)
+import           CMake.Interpreter.Arguments (applyFuncArgs, expandArguments)
 import           CMake.Interpreter.State
+import           Control.Monad.Loops         (iterateUntilM)
 import           Control.Monad.Trans.Maybe   (MaybeT (..))
 import qualified Data.CaseInsensitive        as CI
 import           Data.Foldable               (foldlM)
 import           Data.Function               (on)
 import           Data.Functor                (void, ($>))
 import           Data.HashMap.Strict         ((!?))
+import           Data.Maybe                  (fromJust)
 import           ParserT                     (parseList)
 
 (<$$>) :: (Functor f, Functor g) => (a -> b) -> f (g a) -> f (g b)
@@ -47,25 +49,28 @@ processStatements cs s = foldMaybesM (flip processStatement) s cs
 processStatement :: Statement -> CmState -> IO (Maybe CmState)
 processStatement (InvocationStatement cmd) s = processInvocation cmd s
 processStatement (ConditionalStatement (ConditionalChain first@(ConditionalBlock intro stmt) cmds outro)) s = do
-    r <- foldMaybesM (flip processCondBlock) (s, True) (first : cmds)
+    r <- foldMaybesM (flip processCondBlock) (s, Skipped) (first : cmds)
     return $ fst <$> r
 processStatement (MacroStatement b@(ScopeBlock (CommandInvocation _ ((name, _):_) _) _ _)) s = pure $ Just $ registerCommand name (CmFunction b) s
 processStatement (MacroStatement _) _ = putStrLn "DANGER: Macro unnamed" $> Nothing -- FIXME hoist to parser
 processStatement (FunctionStatement b@(ScopeBlock (CommandInvocation _ ((name, _): _) _) _ _)) s = pure $ Just $ registerCommand name (CmFunction b) s
 processStatement (FunctionStatement _) _ = putStrLn "DANGER: Function unnamed" $> Nothing -- FIXME hoist to parser
 processStatement (ForeachStatement _) s = putStrLn "Unimplemented foreach command" $> Nothing
-processStatement (WhileStatement _) s = putStrLn "Unimplemented while command" $> Nothing
+processStatement (WhileStatement condBlk _) s = fst <$$> iterateUntilM (maybe True ((==Skipped). snd)) (processCondBlock condBlk . fromJust) (Just (s, Ran))
 
-processCondBlock :: ConditionalBlock -> (CmState, Bool) -> IO (Maybe (CmState, Bool))
-processCondBlock _ (s, False) = pure $ Just (s, False)
-processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) _ _) stmts) (s, _)
-  | CI.mk introId == "else" = (,False) <$$> processStatements stmts s
+data CondBlockOutcome = Ran | Skipped deriving (Eq, Show)
+
+processCondBlock :: ConditionalBlock -> (CmState, CondBlockOutcome) -> IO (Maybe (CmState, CondBlockOutcome))
+processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) _ _) _) (s, Ran)
+  | CI.mk introId /= "while" = pure $ Just (s, Ran)
+processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) _ _) stmts) (s, Skipped)
+  | CI.mk introId == "else" = (,Ran) <$$> processStatements stmts s
 processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) introArgs introLoc) stmts) (s@CmState{currentScope}, _) =
   case expandArguments introArgs currentScope >>= parseList condition of
     Nothing -> cmFormattedError FatalError (Just introId) "Unknown arguments specified" introLoc $> Nothing
     Just cond -> do
         condResult <- evalCond cond s
-        if condResult then (,False) <$$> processStatements stmts s else return $ Just (s, True)
+        if condResult then (,Ran) <$$> processStatements stmts s else return $ Just (s, Skipped)
 
 processInvocation :: CommandInvocation -> CmState -> IO (Maybe CmState)
 processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState {commands, currentScope} =
@@ -85,7 +90,8 @@ processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState 
     _ -> Nothing <$ cmFormattedError FatalError (Just name) ("Unknown CMake command \"" ++ name ++ "\".") callSite
 
 cmPrelude :: CmState
-cmPrelude = registerCommand "message" (CmBuiltinCommand simpleMessage)
+cmPrelude = registerCommand "cmake_policy" (CmBuiltinCommand cmakePolicy)
+          $ registerCommand "message" (CmBuiltinCommand simpleMessage)
           $ registerCommand "dbg_printvar" (CmBuiltinCommand dbgPrintvar)
           $ registerCommand "set" (CmBuiltinCommand set) emptyState
   where

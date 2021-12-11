@@ -58,7 +58,7 @@ data Statement = InvocationStatement CommandInvocation
                | MacroStatement ScopeBlock
                | FunctionStatement ScopeBlock
                | ForeachStatement ScopeBlock
-               | WhileStatement ScopeBlock
+               | WhileStatement ConditionalBlock CommandInvocation
                deriving (Eq, Show)
 
 -- | an ifBlock, elseifBlock* elseBlock?, endif

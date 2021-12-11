@@ -29,6 +29,7 @@ library
       CMake.AST.Defs
       CMake.AST.Parser
       CMake.Commands
+      CMake.Commands.CMakePolicy
       CMake.Commands.Set
       CMake.Cond
       CMake.Cond.Defs
@@ -54,6 +55,7 @@ library
     , directory
     , either
     , filepath
+    , monad-loops
     , parsers
     , prettyprinter
     , transformers
@@ -77,6 +79,7 @@ executable hs-cmake-exe
     , either
     , filepath
     , hs-cmake
+    , monad-loops
     , parsers
     , prettyprinter
     , transformers
@@ -101,6 +104,7 @@ test-suite hs-cmake-test
     , either
     , filepath
     , hs-cmake
+    , monad-loops
     , parsers
     , prettyprinter
     , transformers

@@ -10,7 +10,7 @@
 -- CMake grammar productions parsers
 ----------------------------------------------------------------------------
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections     #-}
 module CMake.AST.Parser (
   file,
   statement,
@@ -62,6 +62,8 @@ spaceNonLF = void $ satisfy $ \c -> isSpace c && c /= '\n'
 lineEnding :: Parser ()
 lineEnding = skipOptional lineComment >> void newline
 
+lookCommandAhead :: String -> Parser ()
+lookCommandAhead name = void $ lookAhead (many spaceNonLF *> caseInsensitiveString name)
 
 
 file :: Parser File
@@ -77,7 +79,7 @@ statements :: Parser [Statement]
 statements = catMaybes <$> many fileElement
   where
     fileElement :: Parser (Maybe Statement)
-    fileElement = try staleElement $> Nothing
+    fileElement = try staleElement *> many spaceNonLF $> Nothing
               <|> Just <$> (try (spaces <* void (notFollowedBy $ char '#')) *> statement)
 
 
@@ -87,15 +89,15 @@ statement =  conditionalStatement
          <|> MacroStatement <$> scopeBlock "macro"
          <|> FunctionStatement <$> scopeBlock "function"
          <|> ForeachStatement <$> scopeBlock "foreach"
-         <|> WhileStatement <$> scopeBlock "while"
+         <|> condLoopStatement
          <|> invocationStatement <?> "invocation"
 
 invocationStatement :: Parser Statement
 invocationStatement = notFollowedBy blockTerminators
                    *> (InvocationStatement <$> commandInvocation)
   where
-    blockTerminators :: Parser String
-    blockTerminators = foldl1 (<|>) $ caseInsensitiveString <$> ["elseif", "else", "endif", "endmacro", "endfunction", "endforeach", "endwhile"]
+    blockTerminators :: Parser ()
+    blockTerminators = foldl1 (<|>) $ lookCommandAhead <$> ["elseif", "else", "endif", "endmacro", "endfunction", "endforeach", "endwhile"]
 
 conditionalStatement :: Parser Statement
 conditionalStatement = ConditionalStatement <$> (ConditionalChain <$> if_ <*> torso <*> foot)
@@ -105,19 +107,25 @@ conditionalStatement = ConditionalStatement <$> (ConditionalChain <$> if_ <*> to
     waist :: Parser [ConditionalBlock]
     waist = maybeToList <$> optional else_
     foot :: Parser CommandInvocation
-    foot = lookAhead (caseInsensitiveString "endif") *> commandInvocation
+    foot = lookCommandAhead "endif" *> commandInvocation
     if_,elif_,else_ :: Parser ConditionalBlock
-    if_ = conditionalBlock "if"
-    elif_ = conditionalBlock "elseif"
-    else_ = conditionalBlock "else"
+    if_ = conditionalBlock "if" ordering
+    elif_ = conditionalBlock "elseif" ordering
+    else_ = conditionalBlock "else" ordering
+    ordering  :: [String]
+    ordering = ["if", "elseif", "else", "endif"]
 
-conditionalBlock :: String -> Parser ConditionalBlock
-conditionalBlock entry = lookAhead (caseInsensitiveString entry) *> (ConditionalBlock <$> commandInvocation <*> statements) <* delimiter
+condLoopStatement :: Parser Statement
+condLoopStatement = WhileStatement <$> bust <*> foot
   where
-    conditionalOrdering :: [String]
-    conditionalOrdering = ["if", "elseif", "else", "endif"]
-    delimiter :: Parser String
-    delimiter = lookAhead $ foldl1 (<|>) $ caseInsensitiveString <$> tail (dropWhile (/=entry) conditionalOrdering)
+    bust = conditionalBlock "while" ["while", "endwhile"]
+    foot = lookCommandAhead "endwhile" *> commandInvocation
+
+conditionalBlock :: String -> [String] -> Parser ConditionalBlock
+conditionalBlock entry ordering = lookCommandAhead entry *> (ConditionalBlock <$> commandInvocation <*> statements) <* delimiter
+  where
+    delimiter :: Parser ()
+    delimiter = foldl1 (<|>) $ lookCommandAhead <$> tail (dropWhile (/=entry) ordering)
 
 
 
@@ -125,8 +133,7 @@ scopeBlock :: String -> Parser ScopeBlock
 scopeBlock entry =  lookAhead (caseInsensitiveString entry) *> do
     intro <- commandInvocation
     body <- statements
-    void spaces -- FIXME does not seem to work
-    outro <- lookAhead (caseInsensitiveString ("end" ++ entry)) *> commandInvocation
+    outro <- lookCommandAhead ("end" ++ entry) *> commandInvocation
     -- FIXME error on mismatching args for intro and outro
     return $ ScopeBlock intro body outro
 
@@ -134,9 +141,9 @@ commandInvocation :: Parser CommandInvocation
 commandInvocation = do
     pos <- position
     funcId <- identifier
-    spaces
+    void $ many spaceNonLF
     args <- between (char '(') (char ')') arguments
-    void $ many spaceNonLF <* (lineEnding <|> eof)
+    void $ many space
     return (CommandInvocation funcId args (fromDelta pos)) <?> "command"
 
 
