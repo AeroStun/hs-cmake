@@ -11,7 +11,9 @@
 ----------------------------------------------------------------------------
 module CMake.Commands (
   module CMake.Commands.CMakePolicy,
-  module CMake.Commands.Set
+  module CMake.Commands.Set,
+  module CMake.Commands.Unset
   ) where
-import           CMake.Commands.Set
 import           CMake.Commands.CMakePolicy
+import           CMake.Commands.Set
+import           CMake.Commands.Unset

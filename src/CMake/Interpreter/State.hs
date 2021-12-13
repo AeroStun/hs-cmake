@@ -21,13 +21,14 @@ module CMake.Interpreter.State (
   registerCommand,
   hasVariable,
   readVariable,
-  setVariable
+  setVariable,
+  unsetVariable
   ) where
 import           CMake.AST.Defs
 import           Control.Applicative  ((<|>))
 import           Data.CaseInsensitive (CI)
 import qualified Data.CaseInsensitive as CI
-import           Data.HashMap.Strict  (HashMap, insert, member, (!?))
+import           Data.HashMap.Strict  (HashMap, delete, insert, member, (!?))
 import qualified Data.HashMap.Strict  as HMap (empty)
 
 -- | interpreter state
@@ -82,6 +83,10 @@ readVariable name CmScope{scopeVars, scopeParent} = (scopeVars !? name) <|> sear
 -- | set a variable's value in the current scope
 setVariable :: String -> String -> CmScope -> CmScope
 setVariable name value s@CmScope{scopeVars} =  s{scopeVars=insert name value scopeVars}
+
+-- | unset a variable's value in the current scope
+unsetVariable :: String -> CmScope -> CmScope
+unsetVariable name s@CmScope{scopeVars} =  s{scopeVars=delete name scopeVars}
 
 -- | registers a command by name in the state
 registerCommand :: String -> CmCommand -> CmState -> CmState

@@ -31,6 +31,7 @@ library
       CMake.Commands
       CMake.Commands.CMakePolicy
       CMake.Commands.Set
+      CMake.Commands.Unset
       CMake.Cond
       CMake.Cond.Defs
       CMake.Cond.Eval

@@ -93,6 +93,7 @@ cmPrelude :: CmState
 cmPrelude = registerCommand "cmake_policy" (CmBuiltinCommand cmakePolicy)
           $ registerCommand "message" (CmBuiltinCommand simpleMessage)
           $ registerCommand "dbg_printvar" (CmBuiltinCommand dbgPrintvar)
+          $ registerCommand "unset" (CmBuiltinCommand unset)
           $ registerCommand "set" (CmBuiltinCommand set) emptyState
   where
     dbgPrintvar :: CmBuiltinCommand
