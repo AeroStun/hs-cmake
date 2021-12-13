@@ -27,6 +27,7 @@ import           Data.Functor                (($>))
 import           Data.HashMap.Strict         (member)
 import           Data.Maybe                  (fromMaybe, isJust)
 import           System.Directory            (doesDirectoryExist, doesPathExist,
+                                              getModificationTime,
                                               pathIsSymbolicLink)
 import           System.Environment          (lookupEnv)
 import           System.FilePath             (isAbsolute)
@@ -73,7 +74,7 @@ definedLookup = (Env,)   <$> try (string "ENV{" *> someTill anyChar (char '}' <*
 
 evalBinary :: BinaryOp -> String -> String -> CmScope -> IO Bool
 evalBinary InList              l r s = pure $ maybe False (\ls -> autoDeref l s `elem` splitCmList ls) (readVariable r s)
-evalBinary IsNewerThan         l r s = undefined
+evalBinary IsNewerThan         l r _ = catch (liftM2 (>=) (getModificationTime l) (getModificationTime r)) ((const $ pure True) :: IOException -> IO Bool)
 evalBinary Matches             _ _ _ = putStrLn "Unsupported check MATCHES" $> False
 evalBinary Less                l r s = binaryAutoDeref (<) readMaybeInt l r s
 evalBinary Greater             l r s = binaryAutoDeref (>) readMaybeInt l r s
