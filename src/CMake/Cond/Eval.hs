@@ -19,7 +19,7 @@ import           CMake.Interpreter.Arguments (autoDeref)
 import           CMake.Interpreter.State     (CmScope (..), CmState (..),
                                               hasVariable, readVariable)
 import           CMake.List                  (splitCmList)
-import           Control.Applicative         (Alternative, many, some, (<|>))
+import           Control.Applicative         (Alternative, many, (<|>))
 import           Control.Exception           (IOException, catch)
 import           Control.Monad               (liftM2)
 import qualified Data.CaseInsensitive        as CI (mk)
