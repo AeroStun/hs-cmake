@@ -12,14 +12,21 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
 module CMake.Commands.Set (set) where
-import           CMake.Error             (CmErrorKind (..), cmFormattedError,
-                                          raiseArgumentCountError)
-import           CMake.Interpreter.State (CmBuiltinCommand, CmScope (..),
-                                          CmState (..), setVariable)
-import           CMake.List              (joinCmList)
+import           CMake.AST.Defs              (SourceLocation)
+import           CMake.Error                 (CmErrorKind (..),
+                                              cmFormattedError,
+                                              raiseArgumentCountError)
+import           CMake.Interpreter.Arguments (braced)
+import           CMake.Interpreter.State     (CmBuiltinCommand, CmScope (..),
+                                              CmState (..), setVariable)
+import           CMake.List                  (joinCmList)
+import           Data.Functor                (($>))
+import qualified System.Environment          as Sys (setEnv)
 
 set :: CmBuiltinCommand
 set [] callSite _ = raiseArgumentCountError "set" callSite
+set (bname : values) callSite s
+  | Just envVar <- braced "ENV" bname = setEnv envVar values callSite $> Just s
 set [name] _ s@CmState{currentScope} = pure $ Just s{currentScope=setVariable name "" currentScope}
 set (name : values) _ s@CmState{currentScope}
   | last values /= "PARENT_SCOPE" =
@@ -31,4 +38,14 @@ set (name : values) _ s@CmState{currentScope=CmScope{scopeParent=Just scope}} =
 
 set' :: String -> [String] -> CmScope -> CmScope
 set' name values = setVariable name (joinCmList values)
+
+setEnv :: String -> [String] -> SourceLocation -> IO ()
+setEnv name [] _       = Sys.setEnv name ""
+setEnv name [value] _  = Sys.setEnv name value
+setEnv name (value : sndVal : _) callSite = setEnv name [value] callSite <* warn
+  where
+    warn :: IO ()
+    warn = cmFormattedError AuthorWarning (Just "set") warning callSite
+    warning :: String
+    warning = "Only the first value argument is used when setting an environment variable.\nArgument '" ++ sndVal ++ "' and later are unused."
 
