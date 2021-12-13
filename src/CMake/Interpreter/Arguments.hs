@@ -11,6 +11,7 @@
 ----------------------------------------------------------------------------
 module CMake.Interpreter.Arguments (
   autoDeref,
+  braced,
   expandArguments,
   applyFuncArgs
   ) where
@@ -26,9 +27,16 @@ import           Data.Foldable           (foldl')
 import           Data.Maybe              (fromMaybe)
 import           Text.Trifecta           (ErrInfo (..), Parser, Result (..),
                                           char, eof, many, notChar, parseString)
+import Data.List(isPrefixOf, isSuffixOf)
 
 autoDeref :: String -> CmScope -> String
 autoDeref name s = fromMaybe name $ readVariable name s
+
+braced :: String -> String -> Maybe String
+braced tok arg
+  | not $ (tok ++ "{") `isPrefixOf` arg = Nothing
+  | not $ "}" `isSuffixOf` arg = Nothing
+  | otherwise = pure $ init $ drop (length tok + 1) arg
 
 expandArguments :: Arguments -> CmScope -> Maybe [String]
 expandArguments [] _  = Just []
