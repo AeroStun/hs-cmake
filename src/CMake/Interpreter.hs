@@ -24,6 +24,8 @@ import           CMake.Error                 (CmError (..), CmErrorKind (..),
                                               raiseArgumentCountError)
 import           CMake.Interpreter.Arguments (applyFuncArgs, expandArguments)
 import           CMake.Interpreter.State
+import           CMakeHs.Internal.Functor    ((<$$>))
+import           CMakeHs.Internal.Monad      (ifM)
 import           Control.Monad.Loops         (iterateUntilM)
 import           Control.Monad.Trans.Maybe   (MaybeT (..))
 import qualified Data.CaseInsensitive        as CI
@@ -34,8 +36,6 @@ import           Data.HashMap.Strict         ((!?))
 import           Data.Maybe                  (fromJust)
 import           ParserT                     (parseList)
 
-(<$$>) :: (Functor f, Functor g) => (a -> b) -> f (g a) -> f (g b)
-(<$$>) m v = fmap m <$> v
 
 foldMaybesM :: (Monad m, Foldable f) => (b -> a -> m (Maybe b)) -> b -> f a -> m (Maybe b)
 foldMaybesM p i xs = runMaybeT $ foldlM ((MaybeT .) . p) i xs
@@ -65,12 +65,11 @@ processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) _ _) 
   | CI.mk introId /= "while" = pure $ Just (s, Ran)
 processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) _ _) stmts) (s, Skipped)
   | CI.mk introId == "else" = (,Ran) <$$> processStatements stmts s
-processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) introArgs introLoc) stmts) (s@CmState{currentScope}, _) =
-  case expandArguments introArgs currentScope >>= parseList condition of
+processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) introArgs introLoc) stmts) (s@CmState{currentScope}, _) = do
+  expArgs <- expandArguments introArgs currentScope
+  case expArgs >>= parseList condition of
     Nothing -> cmFormattedError FatalError (Just introId) "Unknown arguments specified" introLoc $> Nothing
-    Just cond -> do
-        condResult <- evalCond cond s
-        if condResult then (,Ran) <$$> processStatements stmts s else return $ Just (s, Skipped)
+    Just cond -> ifM (evalCond cond s) ((,Ran) <$$> processStatements stmts s) (return $ Just (s, Skipped))
 
 processInvocation :: CommandInvocation -> CmState -> IO (Maybe CmState)
 processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState {commands, currentScope} =
@@ -84,9 +83,7 @@ processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState 
         -- FIXME process macro args
         in processStatements stmts state
     Just (CmBuiltinCommand bc) ->
-      case expandArguments args currentScope of
-        Just eargs -> bc eargs callSite s
-        Nothing    -> pure Nothing
+      expandArguments args currentScope >>= maybe (pure Nothing) (\es -> bc es callSite s)
     _ -> Nothing <$ cmFormattedError FatalError (Just name) ("Unknown CMake command \"" ++ name ++ "\".") callSite
 
 cmPrelude :: CmState

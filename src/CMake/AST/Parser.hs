@@ -209,10 +209,18 @@ lineComment = char '#' >> void (many $ notChar '\n') <?> "line comment"
 
 
 variableReference :: Parser VariableReference
-variableReference = char '$' *> (VariableReference <$> braces (many variableReferenceSection))
+variableReference = char '$' *> var
   where
+    var :: Parser VariableReference
+    var = envVar <|> cacheVar <|> scopeVar
     braces :: Parser m -> Parser m
     braces = between (char '{') (char '}')
+    scopeVar :: Parser VariableReference
+    scopeVar = VariableReference Scope <$> braces (many variableReferenceSection)
+    cacheVar :: Parser VariableReference
+    cacheVar = VariableReference Env <$> (string "CACHE" *> braces (many variableReferenceSection))
+    envVar :: Parser VariableReference
+    envVar = VariableReference Env <$> (string "ENV" *> braces (many variableReferenceSection))
 
 variableReferenceSection :: Parser VariableReferenceSection
 variableReferenceSection = IdentifierSection <$> try (some (alphaNum <|> satisfy (`BS.elem` "/_.+-") <|> escapeSequence))

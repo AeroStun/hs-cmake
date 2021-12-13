@@ -24,6 +24,7 @@ module CMake.AST.Defs (
   Arguments,
   Argument,
   ArgumentKind(..),
+  VariableLookup(..),
   VariableReference(..),
   VariableReferenceSection(..),
   builtinLocation
@@ -78,8 +79,8 @@ data ArgumentKind = BracketArgument
               | UnquotedArgument
               deriving (Eq, Show)
 
-
-newtype VariableReference = VariableReference [VariableReferenceSection] deriving (Eq, Show)
+data VariableLookup = Scope | Cache | Env deriving (Eq, Show)
+data VariableReference = VariableReference VariableLookup [VariableReferenceSection] deriving (Eq, Show)
 
 data VariableReferenceSection = IdentifierSection String
                               | NestedReference VariableReference

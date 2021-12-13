@@ -15,19 +15,24 @@ module CMake.Interpreter.Arguments (
   expandArguments,
   applyFuncArgs
   ) where
-import           CMake.AST.Defs          (Argument, ArgumentKind (..),
-                                          Arguments, VariableReference (..),
-                                          VariableReferenceSection (..))
-import qualified CMake.AST.Parser        as AST (variableReference)
-import           CMake.Interpreter.State (CmScope (..), readVariable,
-                                          setVariable)
-import           CMake.List              (joinCmList, splitCmList)
-import           Control.Applicative     (some, (<|>))
-import           Data.Foldable           (foldl')
-import           Data.Maybe              (fromMaybe)
-import           Text.Trifecta           (ErrInfo (..), Parser, Result (..),
-                                          char, eof, many, notChar, parseString)
-import Data.List(isPrefixOf, isSuffixOf)
+import           CMake.AST.Defs           (Argument, ArgumentKind (..),
+                                           Arguments, VariableLookup (..),
+                                           VariableReference (..),
+                                           VariableReferenceSection (..))
+import qualified CMake.AST.Parser         as AST (variableReference)
+import           CMake.Interpreter.State  (CmScope (..), readVariable,
+                                           setVariable)
+import           CMake.List               (joinCmList, splitCmList)
+import           CMakeHs.Internal.Functor ((<$$>))
+import           Control.Applicative      (many, some, (<|>))
+import           Control.Monad            (liftM2)
+import           Data.Foldable            (foldl')
+import           Data.List                (isPrefixOf, isSuffixOf)
+import           Data.Maybe               (fromMaybe)
+import           System.Environment       (lookupEnv)
+import           Text.Parser.Char         (notChar, string)
+import           Text.Trifecta            (ErrInfo (..), Parser, Result (..),
+                                           eof, parseString)
 
 autoDeref :: String -> CmScope -> String
 autoDeref name s = fromMaybe name $ readVariable name s
@@ -38,27 +43,45 @@ braced tok arg
   | not $ "}" `isSuffixOf` arg = Nothing
   | otherwise = pure $ init $ drop (length tok + 1) arg
 
-expandArguments :: Arguments -> CmScope -> Maybe [String]
-expandArguments [] _  = Just []
-expandArguments (x:xs) s = (expandArgument x s :: Maybe [String]) >>= (\c -> (c++) <$> expandArguments xs s)
+expandArguments :: Arguments -> CmScope -> IO (Maybe [String])
+expandArguments [] _  = pure $ Just []
+expandArguments (x:xs) s = expandArgument x s >>= maybe (pure Nothing) (\c -> (c++) <$$> expandArguments xs s)
 
-expandArgument :: Argument -> CmScope -> Maybe [String]
-expandArgument  (str, BracketArgument) _ = Just [str]
-expandArgument (str, QuotedArgument) s   = (:[]) <$> expandString str s
-expandArgument (str, UnquotedArgument) s = splitCmList <$> expandString str s
+expandArgument :: Argument -> CmScope -> IO (Maybe [String])
+expandArgument  (str, BracketArgument) _ = pure $ Just [str]
+expandArgument (str, QuotedArgument) s   = fmap (:[]) <$> expandString str s
+expandArgument (str, UnquotedArgument) s = fmap splitCmList <$> expandString str s
 
 
-expandString :: String -> CmScope -> Maybe String
+expandString :: String -> CmScope -> IO (Maybe String)
 expandString str s = case parseString (expandingArgParse s) mempty str of
-    Success expanded           -> Just expanded
-    Failure ErrInfo{_errDoc=_} -> Nothing  -- TODO pprint failure
+    Success expanded           -> Just <$> expanded
+    Failure ErrInfo{_errDoc=_} -> pure Nothing  -- TODO pprint failure
 
-expandingArgParse :: CmScope -> Parser String
-expandingArgParse s = concat <$> many (some (notChar '$') <|> flip expandVarRef s <$> AST.variableReference <|> (:[]) <$> char '$') <* eof
-expandVarRef :: VariableReference -> CmScope -> String
-expandVarRef (VariableReference sections) s = fromMaybe mempty $ readVariable (concat $ flip expandVarRefSect s <$> sections) s
-expandVarRefSect :: VariableReferenceSection -> CmScope -> String
-expandVarRefSect (IdentifierSection str) _ = str
+expandingArgParse :: CmScope -> Parser (IO String)
+expandingArgParse s = mconcat <$> many (notRef <|> ref <|> dollarLit) <* eof
+  where
+    notRef :: Parser (IO String)
+    notRef = pure <$> some (notChar '$')
+    ref = flip expandVarRef s <$> AST.variableReference
+    dollarLit :: Parser (IO String)
+    dollarLit = pure <$> string "$"
+
+expandVarRef :: VariableReference -> CmScope -> IO String
+expandVarRef (VariableReference l sections) s = (\n -> expandVarRef' l n s) =<< varName
+  where
+    varName :: IO String
+    varName = mconcat $ flipM expandVarRefSect (pure s) sections
+    flipM :: Monad m => (a -> b -> c) -> m b -> m a -> m c
+    flipM f a b = liftM2 (flip f) a b
+
+expandVarRef' :: VariableLookup -> String -> CmScope -> IO String
+expandVarRef' Scope name s = pure $ fromMaybe "" $ readVariable name s
+expandVarRef' Cache _ _    = pure "" -- Cache does not exist in script mode
+expandVarRef' Env name _   = fromMaybe "" <$> lookupEnv name
+
+expandVarRefSect :: VariableReferenceSection -> CmScope -> IO String
+expandVarRefSect (IdentifierSection str) _ = pure str
 expandVarRefSect (NestedReference nr) s    = expandVarRef nr s
 
 applyFuncArgs :: Arguments -> Arguments -> CmScope -> CmScope

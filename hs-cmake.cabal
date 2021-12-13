@@ -42,6 +42,8 @@ library
       CMake.Interpreter.Base
       CMake.Interpreter.State
       CMake.List
+      CMakeHs.Internal.Functor
+      CMakeHs.Internal.Monad
       Lib
       ParserT
   other-modules:
@@ -55,6 +57,7 @@ library
     , containers
     , directory
     , either
+    , extra
     , filepath
     , monad-loops
     , parsers
@@ -78,6 +81,7 @@ executable hs-cmake-exe
     , containers
     , directory
     , either
+    , extra
     , filepath
     , hs-cmake
     , monad-loops
@@ -103,6 +107,7 @@ test-suite hs-cmake-test
     , containers
     , directory
     , either
+    , extra
     , filepath
     , hs-cmake
     , monad-loops

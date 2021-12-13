@@ -12,7 +12,8 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TupleSections  #-}
 
-module CMake.Cond.Eval (evalCond, DefinedLookup(..)) where
+module CMake.Cond.Eval (evalCond) where
+import           CMake.AST.Defs              (VariableLookup (..))
 import           CMake.Cond.Defs             (BinaryOp (..), Cond (..),
                                               UnaryOp (..), truthy)
 import           CMake.Interpreter.Arguments (autoDeref)
@@ -62,8 +63,8 @@ evalUnary IsDirectory a _                     = doesDirectoryExist a
 evalUnary IsSymlink   a _                     = catch (pathIsSymbolicLink a) ((const $ pure False) :: IOException -> IO Bool)
 evalUnary IsAbsolute  a _                     = pure $ isAbsolute a
 
-data DefinedLookup = Scope | Cache | Env deriving (Eq, Show)
-definedLookup :: Parser (DefinedLookup, String)
+
+definedLookup :: Parser (VariableLookup, String)
 definedLookup = (Env,)   <$> try (string "ENV{" *> someTill anyChar (char '}' <* eof))
            <|> (Cache,) <$> try (string "CACHE{" *> someTill anyChar (char '}' <* eof))
            <|> (Scope,) <$> many anyChar
