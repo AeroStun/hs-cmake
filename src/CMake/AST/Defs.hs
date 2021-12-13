@@ -31,7 +31,6 @@ module CMake.AST.Defs (
 
 import           Data.ByteString (ByteString)
 import           Data.Int        (Int64)
-import Data.String (IsString)
 
 
 
