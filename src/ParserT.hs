@@ -31,7 +31,6 @@ module ParserT (
   ) where
 import           Control.Applicative (Alternative (..))
 import           Control.Monad       (MonadPlus (..), void)
-import Data.Foldable (traverse_)
 
 
 -- | Simple parser for a given token-type and result-type
