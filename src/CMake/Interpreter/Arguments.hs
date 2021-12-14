@@ -9,6 +9,8 @@
 --
 -- Arguments processing functions
 ----------------------------------------------------------------------------
+{-# LANGUAGE NamedFieldPuns #-}
+
 module CMake.Interpreter.Arguments (
   autoDeref,
   braced,
@@ -18,8 +20,10 @@ module CMake.Interpreter.Arguments (
 import           CMake.AST.Defs           (Argument, ArgumentKind (..),
                                            Arguments, VariableLookup (..),
                                            VariableReference (..),
-                                           VariableReferenceSection (..))
+                                           VariableReferenceSection (..),
+                                           unknownLocation)
 import qualified CMake.AST.Parser         as AST (variableReference)
+import           CMake.Error              (CmErrorKind (..), cmFormattedError)
 import           CMake.Interpreter.State  (CmScope (..), readVariable,
                                            setVariable)
 import           CMake.List               (joinCmList, splitCmList)
@@ -27,6 +31,7 @@ import           CMakeHs.Internal.Functor ((<$$>))
 import           Control.Applicative      (many, some, (<|>))
 import           Control.Monad            (liftM2)
 import           Data.Foldable            (foldl')
+import           Data.Functor             (($>))
 import           Data.List                (isPrefixOf, isSuffixOf)
 import           Data.Maybe               (fromMaybe)
 import           System.Environment       (lookupEnv)
@@ -56,7 +61,8 @@ expandArgument (str, UnquotedArgument) s = fmap splitCmList <$> expandString str
 expandString :: String -> CmScope -> IO (Maybe String)
 expandString str s = case parseString (expandingArgParse s) mempty str of
     Success expanded           -> Just <$> expanded
-    Failure ErrInfo{_errDoc=_} -> pure Nothing  -- TODO pprint failure
+    Failure ErrInfo{_errDoc} ->
+      cmFormattedError FatalError Nothing ("Syntax error in cmake code\n" ++ show _errDoc) unknownLocation $> Nothing
 
 expandingArgParse :: CmScope -> Parser (IO String)
 expandingArgParse s = mconcat <$> many (notRef <|> ref <|> dollarLit) <* eof
