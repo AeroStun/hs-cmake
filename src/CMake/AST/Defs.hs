@@ -27,7 +27,8 @@ module CMake.AST.Defs (
   VariableLookup(..),
   VariableReference(..),
   VariableReferenceSection(..),
-  builtinLocation
+  builtinLocation,
+  unknownLocation
   ) where
 
 import           Data.ByteString (ByteString)
@@ -50,6 +51,9 @@ instance Show SourceLocation where
 builtinLocation :: SourceLocation
 builtinLocation = SourceLocation "<builtin>" 0 0 0
 
+-- | an unknown source location
+unknownLocation :: SourceLocation
+unknownLocation = SourceLocation "<unknown>" 0 0 0
 
 type File = [Statement]
 
