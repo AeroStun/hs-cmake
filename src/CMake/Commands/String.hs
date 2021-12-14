@@ -7,7 +7,8 @@ import           CMake.Interpreter.State (CmBuiltinCommand, CmScope (..),
                                           CmState (..), setVariable, readVariable)
 import Data.Maybe (fromMaybe)
 import Data.List (findIndices, elemIndices, isPrefixOf, intercalate)
-import Data.Char (toUpper, toLower)
+import Data.Char (toUpper, toLower, isSpace)
+import Numeric (showHex)
 
 string :: CmBuiltinCommand
 
@@ -34,6 +35,10 @@ string ("PREPEND" : stringVar : inputs) _ s@CmState{currentScope} =
     where savedVar = fromMaybe "" $ readVariable stringVar currentScope
 string ["LENGTH", string, output] _ s@CmState{currentScope} =
     pure $ Just s{currentScope=setVariable output (show $ length string) currentScope}
+string ["REPEAT", string, count, outputVar] _ s@CmState{currentScope} =
+    pure $ Just s{currentScope=setVariable outputVar (concat $ replicate (read count) string) currentScope}
+string ["STRIP", string, outputVar] _ s@CmState{currentScope} =
+    pure $ Just s{currentScope=setVariable outputVar (reverse $ dropWhile isSpace $ reverse $ dropWhile isSpace string) currentScope}
 string ["SUBSTRING", string, begin, length, outputVar] _ s@CmState{currentScope} = if lengthI == -1
     then pure $ Just s{currentScope=setVariable outputVar (drop beginI string) currentScope}
     else pure $ Just s{currentScope=setVariable outputVar (take lengthI $ drop beginI string) currentScope}
@@ -44,12 +49,44 @@ string ["TOLOWER", string, stringVar] _ s@CmState{currentScope} =
     pure $ Just s{currentScope=setVariable stringVar (map toLower string) currentScope}
 string ["TOUPPER", string, stringVar] _ s@CmState{currentScope} =
     pure $ Just s{currentScope=setVariable stringVar (map toUpper string) currentScope}
-string _ callsite _ = raiseArgumentCountError "set" callsite
 
+
+-- COMPARISON
+string ["COMPARE", comparator, string1, string2, outputVar] _ s@CmState{currentScope} = 
+     pure $ Just s{currentScope=setVariable outputVar (show r) currentScope}
+     where
+         less = stringLessThan string1 string2
+         equal = string1 == string2
+         greater = not less && not equal
+         r = case comparator of
+             "LESS" -> less
+             "GREATER" -> greater
+             "EQUAL" -> equal
+             "NOTEQUAL" -> not equal
+             "LESS_EQUAL" -> less || equal
+             "GREATER_EQUAL" -> greater || equal
+             _ -> error "COMPARATOR CONTAINS INVALID COMPARATOR"
+
+-- GENERATION
+string ["HEX", string, outputVar] _ s@CmState{currentScope} =
+    pure $ Just s{currentScope=setVariable outputVar (stringToHexRep string) currentScope}
+
+string _ callsite _ = raiseArgumentCountError "set" callsite
 
 --Utility methods
 
+stringToHexRep :: String -> String
+stringToHexRep [] = []
+stringToHexRep (x:xs) = showHex (fromEnum x) "" ++ stringToHexRep xs
+    
 
+stringLessThan :: String -> String -> Bool
+stringLessThan _ [] = False
+stringLessThan [] _ = True
+stringLessThan (x:xs) (y:ys)
+    | x < y = True 
+    | y < x = False 
+    | otherwise = stringLessThan xs ys
 
 findSubstring :: String -> String -> Bool -> Int
 findSubstring [] _ _ = -1 --Default when substring is empty, NOT SURE IF THIS IS CORRECT 
