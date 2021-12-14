@@ -5,10 +5,11 @@ import           CMake.Error             (CmErrorKind (..), cmFormattedError,
                                           raiseArgumentCountError)
 import           CMake.Interpreter.State (CmBuiltinCommand, CmScope (..),
                                           CmState (..), setVariable, readVariable)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isNothing, fromJust)
 import Data.List (findIndices, elemIndices, isPrefixOf, intercalate)
 import Data.Char (toUpper, toLower, isSpace)
 import Numeric (showHex)
+import Text.Read (readMaybe)
 
 string :: CmBuiltinCommand
 
@@ -39,12 +40,23 @@ string ["REPEAT", string, count, outputVar] _ s@CmState{currentScope} =
     pure $ Just s{currentScope=setVariable outputVar (concat $ replicate (read count) string) currentScope}
 string ["STRIP", string, outputVar] _ s@CmState{currentScope} =
     pure $ Just s{currentScope=setVariable outputVar (reverse $ dropWhile isSpace $ reverse $ dropWhile isSpace string) currentScope}
-string ["SUBSTRING", string, begin, length, outputVar] _ s@CmState{currentScope} = if lengthI == -1
-    then pure $ Just s{currentScope=setVariable outputVar (drop beginI string) currentScope}
-    else pure $ Just s{currentScope=setVariable outputVar (take lengthI $ drop beginI string) currentScope}
-    where 
-        lengthI = read length
-        beginI = read begin
+string ["SUBSTRING", string, begin, length, outputVar] callsite s@CmState{currentScope} =
+    let 
+        lengthI = readMaybe length
+        beginI = readMaybe begin
+        justLength = fromJust lengthI
+        justBegin = fromJust beginI
+        in
+            if isNothing lengthI || isNothing beginI
+                then Just s <$ cmFormattedError FatalError (Just "string") "Cannot SUBSTRING as length or begining index can't be parsed." callsite
+                else if justLength == -1
+                    then pure $ Just s{currentScope=setVariable outputVar (drop justBegin string) currentScope}
+                    else pure $ Just s{currentScope=setVariable outputVar (take justLength $ drop justBegin string) currentScope}
+                    
+                        
+            
+            
+        
 string ["TOLOWER", string, stringVar] _ s@CmState{currentScope} =
     pure $ Just s{currentScope=setVariable stringVar (map toLower string) currentScope}
 string ["TOUPPER", string, stringVar] _ s@CmState{currentScope} =
