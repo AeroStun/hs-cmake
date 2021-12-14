@@ -34,6 +34,7 @@ library
       CMake.Commands.Continue
       CMake.Commands.Return
       CMake.Commands.Set
+      CMake.Commands.String
       CMake.Commands.Unset
       CMake.Cond
       CMake.Cond.Defs

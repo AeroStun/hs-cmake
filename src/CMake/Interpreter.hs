@@ -96,6 +96,7 @@ cmPrelude = registerCommand "cmake_policy" (CmBuiltinCommand cmakePolicy)
           $ registerCommand "dbg_printvar" (CmBuiltinCommand dbgPrintvar)
           $ registerCommand "unset" (CmBuiltinCommand unset)
           $ registerCommand "set" (CmBuiltinCommand set)
+          $ registerCommand "string" (CmBuiltinCommand string)
           $ registerCommand "continue" (CmBuiltinCommand cmContinue)
           $ registerCommand "break" (CmBuiltinCommand cmBreak)
           $ registerCommand "return" (CmBuiltinCommand cmReturn) emptyState
