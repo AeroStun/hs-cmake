@@ -47,20 +47,27 @@ processStatements :: [Statement] -> CmState -> IO (Maybe CmState)
 processStatements cs s = foldMaybesM (flip processStatement) s cs
 
 processStatement :: Statement -> CmState -> IO (Maybe CmState)
+processStatement _ s@CmState{evading}
+  | evading /= None = pure $ Just s
 processStatement (InvocationStatement cmd) s = processInvocation cmd s
 processStatement (ConditionalStatement (ConditionalChain first@(ConditionalBlock intro stmt) cmds outro)) s = do
     r <- foldMaybesM (flip processCondBlock) (s, Skipped) (first : cmds)
     return $ fst <$> r
-processStatement (MacroStatement b@(ScopeBlock (CommandInvocation _ ((name, _):_) _) _ _)) s = pure $ Just $ registerCommand name (CmFunction b) s
+processStatement (MacroStatement b@(ScopeBlock (CommandInvocation _ ((name, _):_) _) _ _)) s = pure $ Just $ registerCommand name (CmMacro b) s
 processStatement (MacroStatement _) _ = putStrLn "DANGER: Macro unnamed" $> Nothing -- FIXME hoist to parser
 processStatement (FunctionStatement b@(ScopeBlock (CommandInvocation _ ((name, _): _) _) _ _)) s = pure $ Just $ registerCommand name (CmFunction b) s
 processStatement (FunctionStatement _) _ = putStrLn "DANGER: Function unnamed" $> Nothing -- FIXME hoist to parser
 processStatement (ForeachStatement _) s = putStrLn "Unimplemented foreach command" $> Nothing
-processStatement (WhileStatement condBlk _) s = fst <$$> iterateUntilM (maybe True ((==Skipped). snd)) (processCondBlock condBlk . fromJust) (Just (s, Ran))
+processStatement (WhileStatement condBlk _) s = (exitLoop . fst)
+                                           <$$> iterateUntilM (maybe True (\(CmState{evading}, o) -> o == Skipped || evading == Break || evading == Return))
+                                                              (processCondBlock condBlk . fromJust)
+                                                              (Just (enterLoop s, Ran))
 
 data CondBlockOutcome = Ran | Skipped deriving (Eq, Show)
 
 processCondBlock :: ConditionalBlock -> (CmState, CondBlockOutcome) -> IO (Maybe (CmState, CondBlockOutcome))
+processCondBlock c@(ConditionalBlock (CommandInvocation (Identifier introId) _ _) _) (s@CmState{evading=Continue}, o)
+  | CI.mk introId == "while" = processCondBlock c (s{evading=None}, o)
 processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) _ _) _) (s, Ran)
   | CI.mk introId /= "while" = pure $ Just (s, Ran)
 processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) _ _) stmts) (s, Skipped)
@@ -72,18 +79,15 @@ processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) intro
     Just cond -> ifM (evalCond cond s) ((,Ran) <$$> processStatements stmts s) (return $ Just (s, Skipped))
 
 processInvocation :: CommandInvocation -> CmState -> IO (Maybe CmState)
-processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState {commands, currentScope} =
+processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState{commands, currentScope} =
   case commands !? CI.mk name of
-    Just (CmFunction (ScopeBlock (CommandInvocation (Identifier cfName) (_:fArgs) _) stmts _))
+    Just (CmFunction (ScopeBlock (CommandInvocation _ (_:fArgs) _) stmts _))
       | ((<) `on` void) args fArgs -> raiseArgumentCountError name callSite
-      | otherwise ->
-        let state = if CI.mk cfName == CI.mk "function" -- functions introduce scope, macros do not
-                    then s{currentScope=applyFuncArgs fArgs args emptyScope{scopeParent=Just currentScope}}
-                    else s
-        -- FIXME process macro args
-        in processStatements stmts state
-    Just (CmBuiltinCommand bc) ->
-      expandArguments args currentScope >>= maybe (pure Nothing) (\es -> bc es callSite s)
+      | otherwise -> popScope <$$> processStatements stmts (pushScope (applyFuncArgs fArgs args) s)
+    Just (CmMacro (ScopeBlock (CommandInvocation _ (_:fArgs) _) stmts _))
+      | ((<) `on` void) args fArgs -> raiseArgumentCountError name callSite
+      | otherwise -> processStatements stmts s -- FIXME process macro args
+    Just (CmBuiltinCommand bc) -> expandArguments args currentScope >>= maybe (pure Nothing) (\es -> bc es callSite s)
     _ -> Nothing <$ cmFormattedError FatalError (Just name) ("Unknown CMake command \"" ++ name ++ "\".") callSite
 
 cmPrelude :: CmState
@@ -91,7 +95,10 @@ cmPrelude = registerCommand "cmake_policy" (CmBuiltinCommand cmakePolicy)
           $ registerCommand "message" (CmBuiltinCommand simpleMessage)
           $ registerCommand "dbg_printvar" (CmBuiltinCommand dbgPrintvar)
           $ registerCommand "unset" (CmBuiltinCommand unset)
-          $ registerCommand "set" (CmBuiltinCommand set) emptyState
+          $ registerCommand "set" (CmBuiltinCommand set)
+          $ registerCommand "continue" (CmBuiltinCommand cmContinue)
+          $ registerCommand "break" (CmBuiltinCommand cmBreak)
+          $ registerCommand "return" (CmBuiltinCommand cmReturn) emptyState
   where
     dbgPrintvar :: CmBuiltinCommand
     dbgPrintvar [name] _ s@CmState{currentScope} = putStrLn (name ++ ": " ++ maybe "<unset>" (\v -> "\""++v++"\"") (readVariable name currentScope)) $> Just s

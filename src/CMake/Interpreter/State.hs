@@ -13,6 +13,7 @@
 
 module CMake.Interpreter.State (
   CmState(..),
+  Evasion(..),
   CmScope(..),
   CmCommand(..),
   CmBuiltinCommand,
@@ -22,7 +23,11 @@ module CMake.Interpreter.State (
   hasVariable,
   readVariable,
   setVariable,
-  unsetVariable
+  unsetVariable,
+  pushScope,
+  popScope,
+  enterLoop,
+  exitLoop,
   ) where
 import           CMake.AST.Defs
 import           Control.Applicative  ((<|>))
@@ -34,7 +39,10 @@ import qualified Data.HashMap.Strict  as HMap (empty)
 -- | interpreter state
 data CmState = CmState { currentScope :: CmScope
                        , commands     :: CommandMap
+                       , evading      :: Evasion
                        } deriving Show
+
+data Evasion = None | Return | Break | Continue deriving (Eq, Show)
 
 type VarMap = HashMap String String
 
@@ -42,27 +50,30 @@ type VarMap = HashMap String String
 data CmScope = CmScope { scopeIntroducer :: Maybe CommandInvocation
                        , scopeVars       :: VarMap
                        , scopeParent     :: Maybe CmScope
+                       , loopDepth       :: Int
                        } deriving Show
 
 type CommandMap = HashMap (CI String) CmCommand
 
 -- | invocable function
 data CmCommand = CmFunction ScopeBlock
+               | CmMacro    ScopeBlock
                | CmBuiltinCommand CmBuiltinCommand
 
 instance Show CmCommand where
   show (CmFunction s)       = "(CmFunction " ++ show s ++ ")"
+  show (CmMacro s)          = "(CmMacro " ++ show s ++ ")"
   show (CmBuiltinCommand _) = "<builtin>"
 
 type CmBuiltinCommand =  [String] -> SourceLocation -> CmState -> IO (Maybe CmState)
 
 -- | empty state
 emptyState :: CmState
-emptyState = CmState emptyScope HMap.empty
+emptyState = CmState emptyScope HMap.empty None
 
 -- | empty scope
 emptyScope :: CmScope
-emptyScope = CmScope Nothing HMap.empty Nothing
+emptyScope = CmScope Nothing HMap.empty Nothing 0
 
 -- | checks the existence of a variable in the current scope and above
 hasVariable :: String -> CmScope -> Bool
@@ -91,3 +102,18 @@ unsetVariable name s@CmScope{scopeVars} =  s{scopeVars=delete name scopeVars}
 -- | registers a command by name in the state
 registerCommand :: String -> CmCommand -> CmState -> CmState
 registerCommand name cmd s@CmState{commands} = s{commands=insert (CI.mk name) cmd commands}
+
+pushScope :: CmScope -> CmState -> CmState
+pushScope c t@CmState{currentScope} = t{currentScope=c{scopeParent=Just currentScope}}
+
+popScope :: CmState -> CmState
+popScope s@CmState{currentScope=CmScope{scopeParent=Just parent}} = s{currentScope=parent, evading=None}
+popScope _ = error "Internal error: tried to pop top-level scope"
+
+enterLoop :: CmState -> CmState
+enterLoop s@CmState{currentScope=CmScope{loopDepth}} = s{currentScope=(currentScope s){loopDepth= loopDepth + 1}}
+
+exitLoop :: CmState -> CmState
+exitLoop s@CmState{evading=Break}                   = exitLoop s{evading=None}
+exitLoop s@CmState{evading=Continue}                = exitLoop s{evading=None}
+exitLoop s@CmState{currentScope=CmScope{loopDepth}} = s{currentScope=(currentScope s){loopDepth= loopDepth - 1}}

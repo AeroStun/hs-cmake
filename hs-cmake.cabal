@@ -29,7 +29,10 @@ library
       CMake.AST.Defs
       CMake.AST.Parser
       CMake.Commands
+      CMake.Commands.Break
       CMake.Commands.CMakePolicy
+      CMake.Commands.Continue
+      CMake.Commands.Return
       CMake.Commands.Set
       CMake.Commands.Unset
       CMake.Cond

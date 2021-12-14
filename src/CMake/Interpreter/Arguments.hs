@@ -24,8 +24,8 @@ import           CMake.AST.Defs           (Argument, ArgumentKind (..),
                                            unknownLocation)
 import qualified CMake.AST.Parser         as AST (variableReference)
 import           CMake.Error              (CmErrorKind (..), cmFormattedError)
-import           CMake.Interpreter.State  (CmScope (..), readVariable,
-                                           setVariable)
+import           CMake.Interpreter.State  (CmScope (..), emptyScope,
+                                           readVariable, setVariable)
 import           CMake.List               (joinCmList, splitCmList)
 import           CMakeHs.Internal.Functor ((<$$>))
 import           Control.Applicative      (many, some, (<|>))
@@ -90,12 +90,12 @@ expandVarRefSect :: VariableReferenceSection -> CmScope -> IO String
 expandVarRefSect (IdentifierSection str) _ = pure str
 expandVarRefSect (NestedReference nr) s    = expandVarRef nr s
 
-applyFuncArgs :: Arguments -> Arguments -> CmScope -> CmScope
-applyFuncArgs fa ia s = setVariable "ARGV" (joinCmList $ fst <$> ia)
-                      $ setVariable "ARGC" (show $ length ia)
-                      $ setVariable "ARGN" (joinCmList $ drop (length fa) (fst <$> ia))
-                      $ ffoldl' (uncurry setVariable) (zip (fst <$> fa) (fst <$> ia))
-                      $ ffoldl' (\(i,v) -> setVariable ("ARGV" ++ show i) v) (zip [(0 :: Int)..] (fst <$> ia)) s
+applyFuncArgs :: Arguments -> Arguments -> CmScope
+applyFuncArgs fa ia = setVariable "ARGV" (joinCmList $ fst <$> ia)
+                    $ setVariable "ARGC" (show $ length ia)
+                    $ setVariable "ARGN" (joinCmList $ drop (length fa) (fst <$> ia))
+                    $ ffoldl' (uncurry setVariable) (zip (fst <$> fa) (fst <$> ia))
+                    $ ffoldl' (\(i,v) -> setVariable ("ARGV" ++ show i) v) (zip [(0 :: Int)..] (fst <$> ia)) emptyScope
   where
     ffoldl' :: (a -> b -> b) -> [a] -> b -> b
     ffoldl' r = flip (foldl' (flip r))
