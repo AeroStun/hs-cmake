@@ -83,7 +83,7 @@ string ["COMPARE", comparator, string1, string2, outputVar] _ s@CmState{currentS
 string ["HEX", string, outputVar] _ s@CmState{currentScope} =
     pure $ Just s{currentScope=setVariable outputVar (stringToHexRep string) currentScope}
 
-string _ callsite _ = raiseArgumentCountError "set" callsite
+string _ callsite _ = raiseArgumentCountError "string" callsite
 
 --Utility methods
 
