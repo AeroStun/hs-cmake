@@ -67,7 +67,7 @@ string ["TOUPPER", string, stringVar] _ s@CmState{currentScope} =
 string ["COMPARE", comparator, string1, string2, outputVar] _ s@CmState{currentScope} = 
      pure $ Just s{currentScope=setVariable outputVar (show r) currentScope}
      where
-         less = stringLessThan string1 string2
+         less = string1 < string2
          equal = string1 == string2
          greater = not less && not equal
          r = case comparator of
@@ -90,15 +90,6 @@ string _ callsite _ = raiseArgumentCountError "set" callsite
 stringToHexRep :: String -> String
 stringToHexRep [] = []
 stringToHexRep (x:xs) = showHex (fromEnum x) "" ++ stringToHexRep xs
-    
-
-stringLessThan :: String -> String -> Bool
-stringLessThan _ [] = False
-stringLessThan [] _ = True
-stringLessThan (x:xs) (y:ys)
-    | x < y = True 
-    | y < x = False 
-    | otherwise = stringLessThan xs ys
 
 findSubstring :: String -> String -> Bool -> Int
 findSubstring [] _ _ = -1 --Default when substring is empty, NOT SURE IF THIS IS CORRECT 
