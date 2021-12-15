@@ -224,4 +224,5 @@ variableReference = char '$' *> var
 
 variableReferenceSection :: Parser VariableReferenceSection
 variableReferenceSection = IdentifierSection <$> try (some (alphaNum <|> satisfy (`BS.elem` "/_.+-") <|> escapeSequence))
-                       <|> NestedReference <$> variableReference
+                       <|> NestedReference <$> try variableReference
+                       <|> IdentifierSection <$> some (alphaNum <|> satisfy (`BS.elem` "/_.+-$") <|> escapeSequence)
