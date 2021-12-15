@@ -23,7 +23,8 @@ joinCmList :: [String] -> String
 joinCmList = intercalate ";"
 
 splitCmList :: String -> [String]
-splitCmList = fromResult . parseString anchorArgs mempty
+splitCmList "" = []
+splitCmList s = fromResult $ parseString anchorArgs mempty s
 
 fromResult :: Result [String] -> [String]
 fromResult = \case
