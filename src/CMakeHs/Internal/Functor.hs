@@ -9,8 +9,12 @@
 --
 -- Extra Functor implements
 ----------------------------------------------------------------------------
-module CMakeHs.Internal.Functor ((<$$>)) where
+module CMakeHs.Internal.Functor ((<$$>), (<&&>)) where
 
 -- | Double fmap
 (<$$>) :: (Functor f, Functor g) => (a -> b) -> f (g a) -> f (g b)
 (<$$>) m v = fmap m <$> v
+
+-- | Flipped double fmap
+(<&&>) :: (Functor f, Functor g) => f (g a) -> (a -> b) -> f (g b)
+(<&&>) v m = fmap m <$> v
