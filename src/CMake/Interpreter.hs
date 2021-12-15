@@ -19,12 +19,13 @@ import           CMake.AST.Defs
 import           CMake.Commands
 import           CMake.Cond.Eval             (evalCond)
 import           CMake.Cond.Parser           (condition)
-import           CMake.Error                 (CmError (..), CmErrorKind (..),
+import           CMake.Error                 (CmErrorKind (..),
                                               cmFormattedError,
                                               raiseArgumentCountError)
 import           CMake.Interpreter.Arguments (applyFuncArgs, expandArguments)
 import           CMake.Interpreter.State
-import           CMakeHs.Internal.Functor    ((<$$>))
+import           CMake.List                  (splitCmList)
+import           CMakeHs.Internal.Functor    ((<$$>), (<&&>))
 import           CMakeHs.Internal.Monad      (ifM)
 import           Control.Monad.Loops         (iterateUntilM)
 import           Control.Monad.Trans.Maybe   (MaybeT (..))
@@ -35,6 +36,7 @@ import           Data.Functor                (void, ($>))
 import           Data.HashMap.Strict         ((!?))
 import           Data.Maybe                  (fromJust)
 import           ParserT                     (parseList)
+import           Text.Read                   (readMaybe)
 
 
 foldMaybesM :: (Monad m, Foldable f) => (b -> a -> m (Maybe b)) -> b -> f a -> m (Maybe b)
@@ -57,7 +59,8 @@ processStatement (MacroStatement b@(ScopeBlock (CommandInvocation _ ((name, _):_
 processStatement (MacroStatement _) _ = putStrLn "DANGER: Macro unnamed" $> Nothing -- FIXME hoist to parser
 processStatement (FunctionStatement b@(ScopeBlock (CommandInvocation _ ((name, _): _) _) _ _)) s = pure $ Just $ registerCommand name (CmFunction b) s
 processStatement (FunctionStatement _) _ = putStrLn "DANGER: Function unnamed" $> Nothing -- FIXME hoist to parser
-processStatement (ForeachStatement _) s = putStrLn "Unimplemented foreach command" $> Nothing
+processStatement (ForeachStatement (ScopeBlock (CommandInvocation _ [] cs) _ _)) _ = raiseArgumentCountError "foreach" cs
+processStatement (ForeachStatement sb) s = exitLoop <$$> processForeach sb (enterLoop s)
 processStatement (WhileStatement condBlk _) s = (exitLoop . fst)
                                            <$$> iterateUntilM (maybe True (\(CmState{evading}, o) -> o == Skipped || evading == Break || evading == Return))
                                                               (processCondBlock condBlk . fromJust)
@@ -77,6 +80,62 @@ processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) intro
   case expArgs >>= parseList condition of
     Nothing -> cmFormattedError FatalError (Just introId) "Unknown arguments specified" introLoc $> Nothing
     Just cond -> ifM (evalCond cond s) ((,Ran) <$$> processStatements stmts s) (return $ Just (s, Skipped))
+
+processForeach :: ScopeBlock -> CmState -> IO (Maybe CmState)
+processForeach (ScopeBlock (CommandInvocation _ [] cs) _ _) _ = raiseArgumentCountError "foreach" cs
+processForeach b@(ScopeBlock (CommandInvocation _ [(var, _), ("RANGE", _), (stopS, _)] cs) _ _) s =
+     case readMaybe stopS of
+       Just stop -> processRangeForeach var (1, stop, 1) b s
+               <&&> (\st@CmState{currentScope} -> st{currentScope=unsetVariable var currentScope})
+       Nothing   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ("foreach Invalid integer: '" ++ stopS ++ "'") cs
+processForeach b@(ScopeBlock (CommandInvocation _ [(var, _), ("RANGE", _), (startS, _), (stopS, _)] cs) _ _) s =
+     case (readMaybe startS, readMaybe stopS) of
+       (Just start, Just stop) -> processRangeForeach var (start, stop, 1) b s
+       (Nothing, _)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ("foreach Invalid integer: '" ++ startS ++ "'") cs
+       (_, Nothing)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ("foreach Invalid integer: '" ++ stopS ++ "'") cs
+processForeach b@(ScopeBlock (CommandInvocation _ [(var, _), ("RANGE", _), (startS, _), (stopS, _), (stepS, _)] cs) _ _) s =
+     case (readMaybe startS, readMaybe stopS, readMaybe stepS) of
+       (Just start, Just stop, Just step) -> processRangeForeach var (start, stop, step) b s
+       (Nothing, _, _)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ("foreach Invalid integer: '" ++ startS ++ "'") cs
+       (_, Nothing, _)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ("foreach Invalid integer: '" ++ stopS ++ "'") cs
+       (_, _, Nothing)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ("foreach Invalid integer: '" ++ stepS ++ "'") cs
+processForeach b@(ScopeBlock (CommandInvocation _ ((var, _) : ("IN", _) : ("LISTS", _) :  xs) _) _ _) s@CmState{currentScope} =
+    processListForeach var (expandLists $ fst <$> xs) b s
+  where
+    expandLists :: [String] -> [String]
+    expandLists [] = []
+    expandLists ("ITEMS" : items) = items
+    expandLists (l : ls) = maybe [] splitCmList (readVariable l currentScope) ++ expandLists ls
+processForeach b@(ScopeBlock (CommandInvocation _ ((var, _) : ("IN", _) : ("ITEMS", _) : xs) _) _ _) s =
+    processListForeach var (fst <$> xs) b s
+processForeach b@(ScopeBlock (CommandInvocation _ ((var, _) : vals) _) _ _) s =
+    processListForeach var (fst <$> vals) b s
+
+processListForeach :: String -> [String] -> ScopeBlock -> CmState -> IO (Maybe CmState)
+processListForeach _ [] _ s = pure $ Just s
+processListForeach v xs b s@CmState{evading=Continue} = processListForeach v xs b s{evading=None}
+processListForeach v (x : xs) b@(ScopeBlock _ stmts _) s =
+    (processStatements stmts (setLoopVar s) >>= forward) <&&> unsetLoopVar
+    where
+      setLoopVar :: CmState -> CmState
+      setLoopVar st@CmState{currentScope} = st{currentScope=setVariable v x currentScope}
+      forward :: Maybe CmState -> IO (Maybe CmState)
+      forward = maybe (pure Nothing) (processListForeach v xs b)
+      unsetLoopVar :: CmState -> CmState
+      unsetLoopVar st@CmState{currentScope=endScope} = st{currentScope=unsetVariable v endScope}
+
+processRangeForeach :: String -> (Int, Int, Int) -> ScopeBlock -> CmState -> IO (Maybe CmState)
+processRangeForeach v l@(start, stop, step) b@(ScopeBlock _ stmts _) s@CmState{evading}
+  | evading == Continue = processRangeForeach v l b s{evading=None}
+  | start > stop = pure $ Just s
+  | otherwise = (processStatements stmts (setLoopVar s) >>= forward) <&&> unsetLoopVar
+  where
+    setLoopVar :: CmState -> CmState
+    setLoopVar st@CmState{currentScope} = st{currentScope=setVariable v (show start) currentScope}
+    forward :: Maybe CmState -> IO (Maybe CmState)
+    forward = maybe (pure Nothing) (processRangeForeach v (start + step, stop, step) b)
+    unsetLoopVar :: CmState -> CmState
+    unsetLoopVar st@CmState{currentScope=endScope} = st{currentScope=unsetVariable v endScope}
 
 processInvocation :: CommandInvocation -> CmState -> IO (Maybe CmState)
 processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState{commands, currentScope} =
