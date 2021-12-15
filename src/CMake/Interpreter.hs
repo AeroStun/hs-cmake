@@ -153,6 +153,7 @@ processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState{
 
 cmPrelude :: CmState
 cmPrelude = registerCommand "cmake_policy" (CmBuiltinCommand cmakePolicy)
+          $ registerCommand "math" (CmBuiltinCommand math)
           $ registerCommand "message" (CmBuiltinCommand simpleMessage)
           $ registerCommand "dbg_printvar" (CmBuiltinCommand dbgPrintvar)
           $ registerCommand "unset" (CmBuiltinCommand unset)
