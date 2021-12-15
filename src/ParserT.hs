@@ -15,7 +15,7 @@
 {-# LANGUAGE LambdaCase #-}
 
 module ParserT (
-  ParserT,
+  ParserT(ParserT),
   item,
   eof,
   ensure,
