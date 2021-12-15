@@ -108,6 +108,8 @@ processForeach b@(ScopeBlock (CommandInvocation _ ((var, _) : ("IN", _) : ("LIST
     expandLists (l : ls) = maybe [] splitCmList (readVariable l currentScope) ++ expandLists ls
 processForeach b@(ScopeBlock (CommandInvocation _ ((var, _) : ("IN", _) : ("ITEMS", _) : xs) _) _ _) s =
     processListForeach var (fst <$> xs) b s
+processForeach (ScopeBlock (CommandInvocation _ (_ : ("IN", _) : ("ZIP_LISTS", _) : _) _) _ _) _
+    = error "Unimplemented feature ZIP_LISTS"
 processForeach b@(ScopeBlock (CommandInvocation _ ((var, _) : vals) _) _ _) s =
     processListForeach var (fst <$> vals) b s
 
