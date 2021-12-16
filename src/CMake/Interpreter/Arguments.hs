@@ -92,12 +92,12 @@ expandVarRefSect :: VariableReferenceSection -> CmScope -> IO ByteString
 expandVarRefSect (IdentifierSection str) _ = pure str
 expandVarRefSect (NestedReference nr) s    = expandVarRef nr s
 
-applyFuncArgs :: Arguments -> Arguments -> CmScope
-applyFuncArgs fa ia = setVariable "ARGV" (joinCmList $ fst <$> ia)
+applyFuncArgs :: Arguments -> [ByteString] -> CmScope
+applyFuncArgs fa ia = setVariable "ARGV" (joinCmList ia)
                     $ setVariable "ARGC" (BS.pack $ show $ length ia)
-                    $ setVariable "ARGN" (joinCmList $ drop (length fa) (fst <$> ia))
-                    $ ffoldl' (uncurry setVariable) (zip (fst <$> fa) (fst <$> ia))
-                    $ ffoldl' (\(i,v) -> setVariable (BS.append "ARGV" (BS.pack (show i))) v) (zip [(0 :: Int)..] (fst <$> ia)) emptyScope
+                    $ setVariable "ARGN" (joinCmList $ drop (length fa) ia)
+                    $ ffoldl' (uncurry setVariable) (zip (fst <$> fa) ia)
+                    $ ffoldl' (\(i,v) -> setVariable (BS.append "ARGV" (BS.pack (show i))) v) (zip [(0 :: Int)..] ia) emptyScope
   where
     ffoldl' :: (a -> b -> b) -> [a] -> b -> b
     ffoldl' r = flip (foldl' (flip r))

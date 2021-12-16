@@ -61,7 +61,12 @@ processStatement (MacroStatement _) _ = putStrLn "DANGER: Macro unnamed" $> Noth
 processStatement (FunctionStatement b@(ScopeBlock (CommandInvocation _ ((name, _): _) _) _ _)) s = pure $ Just $ registerCommand name (CmFunction b) s
 processStatement (FunctionStatement _) _ = putStrLn "DANGER: Function unnamed" $> Nothing -- FIXME hoist to parser
 processStatement (ForeachStatement (ScopeBlock (CommandInvocation _ [] cs) _ _)) _ = raiseArgumentCountError "foreach" cs
-processStatement (ForeachStatement sb) s = exitLoop <$$> processForeach sb (enterLoop s)
+processStatement (ForeachStatement sb@(ScopeBlock (CommandInvocation _ args cs) _ _)) s@CmState{currentScope} = do
+    meargs <- expandArguments args currentScope
+    case meargs of
+       Just eargs -> exitLoop <$$> processForeach eargs sb (enterLoop s)
+       Nothing -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["Unknown arguments specified"] cs
+
 processStatement (WhileStatement condBlk _) s = (exitLoop . fst)
                                            <$$> iterateUntilM (maybe True (\(CmState{evading}, o) -> o == Skipped || evading == Break || evading == Return))
                                                               (processCondBlock condBlk . fromJust)
@@ -82,37 +87,34 @@ processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) intro
     Nothing -> cmFormattedError FatalError (Just introId) ["Unknown arguments specified"] introLoc $> Nothing
     Just cond -> ifM (evalCond cond s) ((,Ran) <$$> processStatements stmts s) (return $ Just (s, Skipped))
 
-processForeach :: ScopeBlock -> CmState -> IO (Maybe CmState)
-processForeach (ScopeBlock (CommandInvocation _ [] cs) _ _) _ = raiseArgumentCountError "foreach" cs
-processForeach b@(ScopeBlock (CommandInvocation _ [(var, _), ("RANGE", _), (stopS, _)] cs) _ _) s =
+processForeach :: [ByteString] -> ScopeBlock -> CmState -> IO (Maybe CmState)
+processForeach [] (ScopeBlock (CommandInvocation _ _ cs) _ _) _ = raiseArgumentCountError "foreach" cs
+processForeach [var, "RANGE", stopS] b@(ScopeBlock (CommandInvocation _ _ cs) _ _) s =
      case readMaybeInt stopS of
-       Just stop -> processRangeForeach var (1, stop, 1) b s
+       Just stop -> processRangeForeach var (0, stop, 1) b s
                <&&> (\st@CmState{currentScope} -> st{currentScope=unsetVariable var currentScope})
        Nothing   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["foreach Invalid integer: '", stopS, "'"] cs
-processForeach b@(ScopeBlock (CommandInvocation _ [(var, _), ("RANGE", _), (startS, _), (stopS, _)] cs) _ _) s =
+processForeach [var, "RANGE", startS, stopS] b@(ScopeBlock (CommandInvocation _ _ cs) _ _) s =
      case (readMaybeInt startS, readMaybeInt stopS) of
        (Just start, Just stop) -> processRangeForeach var (start, stop, 1) b s
        (Nothing, _)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["foreach Invalid integer: '", startS, "'"] cs
        (_, Nothing)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["foreach Invalid integer: '", stopS, "'"] cs
-processForeach b@(ScopeBlock (CommandInvocation _ [(var, _), ("RANGE", _), (startS, _), (stopS, _), (stepS, _)] cs) _ _) s =
+processForeach [var, "RANGE", startS, stopS, stepS] b@(ScopeBlock (CommandInvocation _ _ cs) _ _) s =
      case (readMaybeInt startS, readMaybeInt stopS, readMaybeInt stepS) of
        (Just start, Just stop, Just step) -> processRangeForeach var (start, stop, step) b s
        (Nothing, _, _)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["foreach Invalid integer: '", startS, "'"] cs
        (_, Nothing, _)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["foreach Invalid integer: '", stopS, "'"] cs
        (_, _, Nothing)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["foreach Invalid integer: '", stepS,  "'"] cs
-processForeach b@(ScopeBlock (CommandInvocation _ ((var, _) : ("IN", _) : ("LISTS", _) :  xs) _) _ _) s@CmState{currentScope} =
-    processListForeach var (expandLists $ fst <$> xs) b s
+processForeach (var : "IN" : "LISTS" :  xs) b s@CmState{currentScope} = processListForeach var (expandLists xs) b s
   where
     expandLists :: [ByteString] -> [ByteString]
     expandLists [] = []
     expandLists ("ITEMS" : items) = items
     expandLists (l : ls) = maybe [] splitCmList (readVariable l currentScope) ++ expandLists ls
-processForeach b@(ScopeBlock (CommandInvocation _ ((var, _) : ("IN", _) : ("ITEMS", _) : xs) _) _ _) s =
-    processListForeach var (fst <$> xs) b s
-processForeach (ScopeBlock (CommandInvocation _ (_ : ("IN", _) : ("ZIP_LISTS", _) : _) _) _ _) _
+processForeach (var : "IN" : "ITEMS" : xs) b s = processListForeach var xs b s
+processForeach (_ : "IN" : "ZIP_LISTS" : _) _ _
     = error "Unimplemented feature ZIP_LISTS"
-processForeach b@(ScopeBlock (CommandInvocation _ ((var, _) : vals) _) _ _) s =
-    processListForeach var (fst <$> vals) b s
+processForeach (var : vals) b s = processListForeach var vals b s
 
 processListForeach :: ByteString -> [ByteString] -> ScopeBlock -> CmState -> IO (Maybe CmState)
 processListForeach _ [] _ s = pure $ Just s
@@ -141,15 +143,18 @@ processRangeForeach v l@(start, stop, step) b@(ScopeBlock _ stmts _) s@CmState{e
     unsetLoopVar st@CmState{currentScope=endScope} = st{currentScope=unsetVariable v endScope}
 
 processInvocation :: CommandInvocation -> CmState -> IO (Maybe CmState)
-processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState{commands, currentScope} =
+processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState{commands, currentScope} = do
+  meargs <- expandArguments args currentScope
   case commands !? CI.mk name of
     Just (CmFunction (ScopeBlock (CommandInvocation _ (_:fArgs) _) stmts _))
       | ((<) `on` void) args fArgs -> raiseArgumentCountError name callSite
-      | otherwise -> popScope <$$> processStatements stmts (pushScope (applyFuncArgs fArgs args) s)
+      | Just eargs <- meargs -> popScope <$$> processStatements stmts (pushScope (applyFuncArgs fArgs eargs) s)
     Just (CmMacro (ScopeBlock (CommandInvocation _ (_:fArgs) _) stmts _))
       | ((<) `on` void) args fArgs -> raiseArgumentCountError name callSite
       | otherwise -> processStatements stmts s -- FIXME process macro args
-    Just (CmBuiltinCommand bc) -> expandArguments args currentScope >>= maybe (pure Nothing) (\es -> bc es callSite s)
+    Just (CmBuiltinCommand bc)
+      | Just eargs <- meargs -> bc eargs callSite s
+      | otherwise -> pure Nothing
     _ -> Nothing <$ cmFormattedError FatalError (Just name) ["Unknown CMake command \"", name, "\"."] callSite
 
 cmPrelude :: CmState

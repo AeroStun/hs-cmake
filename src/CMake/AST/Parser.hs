@@ -181,7 +181,7 @@ quotedArgument :: Parser Argument
 quotedArgument = (,QuotedArgument) . BS.pack . catMaybes <$> many quotedElement `surroundedBy` char '"'
   where
     quotedElement :: Parser (Maybe Char)
-    quotedElement = Just <$> (noneOf "\"" <|> try escapeSequence)
+    quotedElement = Just <$> (try escapeSequence <|> noneOf "\"")
                 <|> (char '\\' *> newline $> Nothing)
 
 unquotedArgument :: Parser Argument

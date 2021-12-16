@@ -36,7 +36,7 @@ set (name : values) _ s@CmState{currentScope}
 set (name : _) callSite s@CmState{currentScope=CmScope{scopeParent=Nothing}} =
   Just s <$ cmFormattedError AuthorWarning (Just "set") [" Cannot set \"", name, "\": current scope has no parent."] callSite
 set (name : values) _ s@CmState{currentScope=CmScope{scopeParent=Just scope}} =
-  pure $ Just s{currentScope=(currentScope s){scopeParent=Just $ set' name values scope}}
+  pure $ Just s{currentScope=(currentScope s){scopeParent=Just $ set' name (init values) scope}}
 
 set' :: ByteString -> [ByteString] -> CmScope -> CmScope
 set' name values = setVariable name (joinCmList values)
