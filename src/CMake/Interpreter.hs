@@ -29,6 +29,8 @@ import           CMakeHs.Internal.Functor    ((<$$>), (<&&>))
 import           CMakeHs.Internal.Monad      (ifM)
 import           Control.Monad.Loops         (iterateUntilM)
 import           Control.Monad.Trans.Maybe   (MaybeT (..))
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString.Char8       as BS
 import qualified Data.CaseInsensitive        as CI
 import           Data.Foldable               (foldlM)
 import           Data.Function               (on)
@@ -36,8 +38,6 @@ import           Data.Functor                (void, ($>))
 import           Data.HashMap.Strict         ((!?))
 import           Data.Maybe                  (fromJust)
 import           ParserT                     (parseList)
-import           Text.Read                   (readMaybe)
-
 
 foldMaybesM :: (Monad m, Foldable f) => (b -> a -> m (Maybe b)) -> b -> f a -> m (Maybe b)
 foldMaybesM p i xs = runMaybeT $ foldlM ((MaybeT .) . p) i xs
@@ -78,31 +78,31 @@ processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) _ _) 
 processCondBlock (ConditionalBlock (CommandInvocation (Identifier introId) introArgs introLoc) stmts) (s@CmState{currentScope}, _) = do
   expArgs <- expandArguments introArgs currentScope
   case expArgs >>= parseList condition of
-    Nothing -> cmFormattedError FatalError (Just introId) "Unknown arguments specified" introLoc $> Nothing
+    Nothing -> cmFormattedError FatalError (Just introId) ["Unknown arguments specified"] introLoc $> Nothing
     Just cond -> ifM (evalCond cond s) ((,Ran) <$$> processStatements stmts s) (return $ Just (s, Skipped))
 
 processForeach :: ScopeBlock -> CmState -> IO (Maybe CmState)
 processForeach (ScopeBlock (CommandInvocation _ [] cs) _ _) _ = raiseArgumentCountError "foreach" cs
 processForeach b@(ScopeBlock (CommandInvocation _ [(var, _), ("RANGE", _), (stopS, _)] cs) _ _) s =
-     case readMaybe stopS of
+     case readMaybeInt stopS of
        Just stop -> processRangeForeach var (1, stop, 1) b s
                <&&> (\st@CmState{currentScope} -> st{currentScope=unsetVariable var currentScope})
-       Nothing   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ("foreach Invalid integer: '" ++ stopS ++ "'") cs
+       Nothing   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["foreach Invalid integer: '", stopS, "'"] cs
 processForeach b@(ScopeBlock (CommandInvocation _ [(var, _), ("RANGE", _), (startS, _), (stopS, _)] cs) _ _) s =
-     case (readMaybe startS, readMaybe stopS) of
+     case (readMaybeInt startS, readMaybeInt stopS) of
        (Just start, Just stop) -> processRangeForeach var (start, stop, 1) b s
-       (Nothing, _)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ("foreach Invalid integer: '" ++ startS ++ "'") cs
-       (_, Nothing)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ("foreach Invalid integer: '" ++ stopS ++ "'") cs
+       (Nothing, _)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["foreach Invalid integer: '", startS, "'"] cs
+       (_, Nothing)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["foreach Invalid integer: '", stopS, "'"] cs
 processForeach b@(ScopeBlock (CommandInvocation _ [(var, _), ("RANGE", _), (startS, _), (stopS, _), (stepS, _)] cs) _ _) s =
-     case (readMaybe startS, readMaybe stopS, readMaybe stepS) of
+     case (readMaybeInt startS, readMaybeInt stopS, readMaybeInt stepS) of
        (Just start, Just stop, Just step) -> processRangeForeach var (start, stop, step) b s
-       (Nothing, _, _)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ("foreach Invalid integer: '" ++ startS ++ "'") cs
-       (_, Nothing, _)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ("foreach Invalid integer: '" ++ stopS ++ "'") cs
-       (_, _, Nothing)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ("foreach Invalid integer: '" ++ stepS ++ "'") cs
+       (Nothing, _, _)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["foreach Invalid integer: '", startS, "'"] cs
+       (_, Nothing, _)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["foreach Invalid integer: '", stopS, "'"] cs
+       (_, _, Nothing)   -> Nothing <$ cmFormattedError FatalError (Just "foreach") ["foreach Invalid integer: '", stepS,  "'"] cs
 processForeach b@(ScopeBlock (CommandInvocation _ ((var, _) : ("IN", _) : ("LISTS", _) :  xs) _) _ _) s@CmState{currentScope} =
     processListForeach var (expandLists $ fst <$> xs) b s
   where
-    expandLists :: [String] -> [String]
+    expandLists :: [ByteString] -> [ByteString]
     expandLists [] = []
     expandLists ("ITEMS" : items) = items
     expandLists (l : ls) = maybe [] splitCmList (readVariable l currentScope) ++ expandLists ls
@@ -113,7 +113,10 @@ processForeach (ScopeBlock (CommandInvocation _ (_ : ("IN", _) : ("ZIP_LISTS", _
 processForeach b@(ScopeBlock (CommandInvocation _ ((var, _) : vals) _) _ _) s =
     processListForeach var (fst <$> vals) b s
 
-processListForeach :: String -> [String] -> ScopeBlock -> CmState -> IO (Maybe CmState)
+readMaybeInt :: ByteString -> Maybe Int
+readMaybeInt bs = case BS.readInt bs of Just (v, "") -> Just v; _ -> Nothing
+
+processListForeach :: ByteString -> [ByteString] -> ScopeBlock -> CmState -> IO (Maybe CmState)
 processListForeach _ [] _ s = pure $ Just s
 processListForeach v xs b s@CmState{evading=Continue} = processListForeach v xs b s{evading=None}
 processListForeach v (x : xs) b@(ScopeBlock _ stmts _) s =
@@ -126,14 +129,14 @@ processListForeach v (x : xs) b@(ScopeBlock _ stmts _) s =
       unsetLoopVar :: CmState -> CmState
       unsetLoopVar st@CmState{currentScope=endScope} = st{currentScope=unsetVariable v endScope}
 
-processRangeForeach :: String -> (Int, Int, Int) -> ScopeBlock -> CmState -> IO (Maybe CmState)
+processRangeForeach :: ByteString -> (Int, Int, Int) -> ScopeBlock -> CmState -> IO (Maybe CmState)
 processRangeForeach v l@(start, stop, step) b@(ScopeBlock _ stmts _) s@CmState{evading}
   | evading == Continue = processRangeForeach v l b s{evading=None}
   | start > stop = pure $ Just s
   | otherwise = (processStatements stmts (setLoopVar s) >>= forward) <&&> unsetLoopVar
   where
     setLoopVar :: CmState -> CmState
-    setLoopVar st@CmState{currentScope} = st{currentScope=setVariable v (show start) currentScope}
+    setLoopVar st@CmState{currentScope} = st{currentScope=setVariable v (BS.pack $ show start) currentScope}
     forward :: Maybe CmState -> IO (Maybe CmState)
     forward = maybe (pure Nothing) (processRangeForeach v (start + step, stop, step) b)
     unsetLoopVar :: CmState -> CmState
@@ -149,7 +152,7 @@ processInvocation (CommandInvocation (Identifier name) args callSite) s@CmState{
       | ((<) `on` void) args fArgs -> raiseArgumentCountError name callSite
       | otherwise -> processStatements stmts s -- FIXME process macro args
     Just (CmBuiltinCommand bc) -> expandArguments args currentScope >>= maybe (pure Nothing) (\es -> bc es callSite s)
-    _ -> Nothing <$ cmFormattedError FatalError (Just name) ("Unknown CMake command \"" ++ name ++ "\".") callSite
+    _ -> Nothing <$ cmFormattedError FatalError (Just name) ["Unknown CMake command \"", name, "\"."] callSite
 
 cmPrelude :: CmState
 cmPrelude = registerCommand "cmake_policy" (CmBuiltinCommand cmakePolicy)
@@ -164,9 +167,9 @@ cmPrelude = registerCommand "cmake_policy" (CmBuiltinCommand cmakePolicy)
           $ registerCommand "return" (CmBuiltinCommand cmReturn) emptyState
   where
     dbgPrintvar :: CmBuiltinCommand
-    dbgPrintvar [name] _ s@CmState{currentScope} = putStrLn (name ++ ": " ++ maybe "<unset>" (\v -> "\""++v++"\"") (readVariable name currentScope)) $> Just s
+    dbgPrintvar [name] _ s@CmState{currentScope} = BS.putStrLn (mconcat [name, ": ", maybe "<unset>" (\v -> mconcat ["\"", v, "\""]) (readVariable name currentScope)]) $> Just s
     dbgPrintvar _ caller _ = pure Nothing
 
     simpleMessage :: CmBuiltinCommand
     simpleMessage [] caller _ = pure Nothing
-    simpleMessage msgs _ s    = putStrLn (concat msgs) $> Just s
+    simpleMessage msgs _ s    = BS.putStrLn (mconcat msgs) $> Just s

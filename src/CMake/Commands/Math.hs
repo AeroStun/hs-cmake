@@ -9,7 +9,7 @@
 --
 -- CMake `math` command
 ----------------------------------------------------------------------------
-
+{-# LANGUAGE OverloadedStrings #-}
 module CMake.Commands.Math (math) where
 
 import           CMake.AST.Defs           (SourceLocation)
@@ -22,11 +22,14 @@ import           CMakeHs.Internal.Functor ((<$$>))
 import           Control.Applicative      (many, (<|>))
 import           Data.Bits                (complement, shiftL, shiftR, xor,
                                            (.&.), (.|.))
+import           Data.ByteString          (ByteString)
+import qualified Data.ByteString.Char8    as BS
 import           Data.Int                 (Int64)
 import           Numeric.Extra            (readDec, readHex, showHex)
 import           ParserT                  (ParserT (..), chainl1, parseList,
                                            tok, toks)
 import           Text.Parser.Combinators  (between)
+
 
 math :: CmBuiltinCommand
 math ["EXPR", o, e] cs s = math' o e Decimal cs s
@@ -36,20 +39,20 @@ math _ cs _ = raiseArgumentCountError "math" cs
 
 data Base = Decimal | Hexadecimal
 
-showBase :: Base -> Int64 -> String
-showBase Decimal     v = show v
-showBase Hexadecimal v = "0x" ++ showHex v ""
+showBase :: Base -> Int64 -> ByteString
+showBase Decimal     v = BS.pack $ show v
+showBase Hexadecimal v = BS.pack $ "0x" ++ showHex v ""
 
-math' :: String -> String -> Base -> SourceLocation -> CmState -> IO (Maybe CmState)
+math' :: ByteString -> ByteString -> Base -> SourceLocation -> CmState -> IO (Maybe CmState)
 math' o e b cs s@CmState{currentScope=ps} = (\v -> s{currentScope=setVariable o (showBase b v) ps}) <$$> math'' e cs
 
-math'' :: String -> SourceLocation -> IO (Maybe Int64)
+math'' :: ByteString -> SourceLocation -> IO (Maybe Int64)
 math'' s cs = case eval s of
                 Just v -> pure $ Just v
-                Nothing -> Nothing <$ cmFormattedError FatalError (Just "math") "math cannot parse the expression" cs
+                Nothing -> Nothing <$ cmFormattedError FatalError (Just "math") ["math cannot parse the expression"] cs
 
-eval :: String -> Maybe Int64
-eval = parseList $ many (tok ' ') *> expr
+eval :: ByteString -> Maybe Int64
+eval s = parseList (many (tok ' ') *> expr) (BS.unpack s)
 
 type ExprParser r = ParserT Char r
 type ExprReducer = ExprParser Int64

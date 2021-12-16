@@ -67,6 +67,7 @@ library
     , monad-loops
     , parsers
     , prettyprinter
+    , stringsearch
     , transformers
     , trifecta
     , unordered-containers
@@ -92,6 +93,7 @@ executable hs-cmake-exe
     , monad-loops
     , parsers
     , prettyprinter
+    , stringsearch
     , transformers
     , trifecta
     , unordered-containers
@@ -118,6 +120,7 @@ test-suite hs-cmake-test
     , monad-loops
     , parsers
     , prettyprinter
+    , stringsearch
     , transformers
     , trifecta
     , unordered-containers

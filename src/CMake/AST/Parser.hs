@@ -25,18 +25,18 @@ module CMake.AST.Parser (
 import           CMake.AST.Defs
 import           Control.Applicative   (many, optional, some, (<|>))
 import           Control.Monad         (void)
-import           Data.ByteString       (ByteString)
 import qualified Data.ByteString.Char8 as BS
 import           Data.Char             (isSpace, toLower, toUpper)
 import           Data.Functor          (($>))
 import           Data.Maybe            (catMaybes, maybeToList)
+import           Text.Parser.Char      (CharParsing)
 import           Text.Parser.LookAhead (lookAhead)
-import           Text.Trifecta         (CharParsing, Parser, alphaNum, anyChar,
-                                        between, char, eof, manyTill, newline,
-                                        noneOf, notChar, notFollowedBy, oneOf,
-                                        position, satisfy, satisfyRange,
-                                        skipOptional, space, spaces, string,
-                                        surroundedBy, try, (<?>))
+import           Text.Trifecta         (Parser, alphaNum, anyChar, between,
+                                        char, eof, manyTill, newline, noneOf,
+                                        notChar, notFollowedBy, oneOf, position,
+                                        satisfy, satisfyRange, skipOptional,
+                                        space, spaces, string, surroundedBy,
+                                        try, (<?>))
 import           Text.Trifecta.Delta   (Delta (..))
 
 (~~) :: CharParsing m => Char -> Char -> m Char
@@ -148,7 +148,7 @@ commandInvocation = do
 
 
 identifier :: Parser Identifier
-identifier = Identifier <$> some ('A' ~~ 'Z' <|> 'a' ~~ 'z' <|> char '_' <|> '0' ~~ '9') <?> "identifier"
+identifier = Identifier . BS.pack <$> some ('A' ~~ 'Z' <|> 'a' ~~ 'z' <|> char '_' <|> '0' ~~ '9') <?> "identifier"
 
 arguments :: Parser Arguments
 arguments = do
@@ -174,18 +174,18 @@ bracketArgument :: Parser Argument
 bracketArgument = do
     opening <- char '[' *> many (char '=') <* char '['
     let closing = string $ "]" <> opening <> "]"
-    (,BracketArgument) <$> anyChar `manyTill` try closing
+    (,BracketArgument) . BS.pack <$> anyChar `manyTill` try closing
 
 
 quotedArgument :: Parser Argument
-quotedArgument = (,QuotedArgument) . catMaybes <$> many quotedElement `surroundedBy` char '"'
+quotedArgument = (,QuotedArgument) . BS.pack . catMaybes <$> many quotedElement `surroundedBy` char '"'
   where
     quotedElement :: Parser (Maybe Char)
     quotedElement = Just <$> (noneOf "\"" <|> try escapeSequence)
                 <|> (char '\\' *> newline $> Nothing)
 
 unquotedArgument :: Parser Argument
-unquotedArgument = (,UnquotedArgument) <$> some (satisfy unElem <|> escapeSequence)
+unquotedArgument = (,UnquotedArgument) . BS.pack <$> some (satisfy unElem <|> escapeSequence)
   where
     unElem :: Char -> Bool
     unElem c = c `BS.notElem` "()#\"" && not (isSpace c)
@@ -223,6 +223,6 @@ variableReference = char '$' *> var
     envVar = VariableReference Env <$> (string "ENV" *> braces (many variableReferenceSection))
 
 variableReferenceSection :: Parser VariableReferenceSection
-variableReferenceSection = IdentifierSection <$> try (some (alphaNum <|> satisfy (`BS.elem` "/_.+-") <|> escapeSequence))
+variableReferenceSection = IdentifierSection . BS.pack <$> try (some (alphaNum <|> satisfy (`BS.elem` "/_.+-") <|> escapeSequence))
                        <|> NestedReference <$> try variableReference
-                       <|> IdentifierSection <$> some (alphaNum <|> satisfy (`BS.elem` "/_.+-$") <|> escapeSequence)
+                       <|> IdentifierSection . BS.pack <$> some (alphaNum <|> satisfy (`BS.elem` "/_.+-$") <|> escapeSequence)

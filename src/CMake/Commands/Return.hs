@@ -1,3 +1,15 @@
+-----------------------------------------------------------------------------
+-- |
+-- Copyright   :  (C) 2021 AeroStun
+-- License     :  Apache-2.0
+--
+-- Maintainer  :  AeroStun <24841307+AeroStun@users.noreply.github.com>
+-- Stability   :  experimental
+-- Portability :  non-portable
+--
+-- CMake `return` command
+----------------------------------------------------------------------------
+{-# LANGUAGE OverloadedStrings #-}
 module CMake.Commands.Return (cmReturn) where
 import           CMake.Error             (CmErrorKind (FatalError),
                                           cmFormattedError)
@@ -11,5 +23,5 @@ cmReturn _ callSite _ = Nothing <$ printErr
     printErr :: IO ()
     printErr = cmFormattedError FatalError
                                 (Just "return")
-                                "The RETURN command does not accept any arguments"
+                                ["The RETURN command does not accept any arguments"]
                                 callSite

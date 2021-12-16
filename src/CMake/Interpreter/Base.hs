@@ -10,19 +10,22 @@
 -- Core CMake concepts
 -- [deprecated]
 ----------------------------------------------------------------------------
+{-# LANGUAGE OverloadedStrings #-}
 module CMake.Interpreter.Base(
   immutableCommands,
   controlFlowCommands,
   controlFlowIntroducers
   ) where
+import           Data.ByteString       (ByteString)
+import qualified Data.ByteString.Char8 as BS
 
-immutableCommands :: [String]
+immutableCommands :: [ByteString]
 immutableCommands = controlFlowCommands ++ ["break", "continue", "return"]
 
-controlFlowCommands :: [String]
+controlFlowCommands :: [ByteString]
 controlFlowCommands = controlFlowIntroducers
-                    ++ fmap ("end"++) controlFlowIntroducers
+                    ++ fmap (BS.append "end") controlFlowIntroducers
                     ++ ["elseif", "else", "break"]
 
-controlFlowIntroducers :: [String]
+controlFlowIntroducers :: [ByteString]
 controlFlowIntroducers = ["if", "foreach", "while", "function", "macro"]

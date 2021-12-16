@@ -9,29 +9,31 @@
 --
 -- CMake list handling utilities
 ----------------------------------------------------------------------------
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
 module CMake.List (joinCmList, splitCmList) where
 import           Control.Applicative     ((<|>))
+import           Data.ByteString         (ByteString)
+import qualified Data.ByteString.Char8   as BS
 import           Data.Functor            (($>))
-import           Data.List               (intercalate)
 import           Text.Parser.Char        (char, notChar, string)
 import           Text.Parser.Combinators (eof, many, sepBy)
-import           Text.Trifecta.Parser    (Parser, parseString)
+import           Text.Trifecta.Parser    (Parser, parseByteString)
 import           Text.Trifecta.Result    (Result (..))
 
-joinCmList :: [String] -> String
-joinCmList = intercalate ";"
+joinCmList :: [ByteString] -> ByteString
+joinCmList = BS.intercalate ";"
 
-splitCmList :: String -> [String]
+splitCmList :: ByteString -> [ByteString]
 splitCmList "" = []
-splitCmList s = fromResult $ parseString anchorArgs mempty s
+splitCmList s  = fromResult $ parseByteString anchorArgs mempty s
 
-fromResult :: Result [String] -> [String]
+fromResult :: Result [m] -> [m]
 fromResult = \case
               Success xs -> xs
               _          -> error "Internal parsing failure"
 
-anchorArgs :: Parser [String]
-anchorArgs = many unescapeSemi `sepBy` char ';' <* eof
+anchorArgs :: Parser [ByteString]
+anchorArgs =  (BS.pack <$> many unescapeSemi) `sepBy` char ';' <* eof
 unescapeSemi :: Parser Char
 unescapeSemi = (string "\\;" $> ';') <|> notChar ';'

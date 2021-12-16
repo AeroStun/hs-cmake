@@ -73,11 +73,11 @@ data ScopeBlock = ScopeBlock CommandInvocation [Statement] CommandInvocation der
 
 data CommandInvocation = CommandInvocation Identifier Arguments SourceLocation deriving (Eq, Show)
 
-newtype Identifier = Identifier String deriving (Eq, Show)
+newtype Identifier = Identifier ByteString deriving (Eq, Show)
 
 type Arguments = [Argument]
 
-type Argument = (String, ArgumentKind)
+type Argument = (ByteString, ArgumentKind)
 data ArgumentKind = BracketArgument
               | QuotedArgument
               | UnquotedArgument
@@ -86,6 +86,6 @@ data ArgumentKind = BracketArgument
 data VariableLookup = Scope | Cache | Env deriving (Eq, Show)
 data VariableReference = VariableReference VariableLookup [VariableReferenceSection] deriving (Eq, Show)
 
-data VariableReferenceSection = IdentifierSection String
+data VariableReferenceSection = IdentifierSection ByteString
                               | NestedReference VariableReference
                               deriving (Eq, Show)

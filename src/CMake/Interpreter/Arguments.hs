@@ -9,7 +9,8 @@
 --
 -- Arguments processing functions
 ----------------------------------------------------------------------------
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module CMake.Interpreter.Arguments (
   autoDeref,
@@ -30,72 +31,73 @@ import           CMake.List               (joinCmList, splitCmList)
 import           CMakeHs.Internal.Functor ((<$$>))
 import           Control.Applicative      (many, some, (<|>))
 import           Control.Monad            (liftM2)
+import           Data.ByteString          (ByteString)
+import qualified Data.ByteString.Char8    as BS
 import           Data.Foldable            (foldl')
 import           Data.Functor             (($>))
-import           Data.List                (isPrefixOf, isSuffixOf)
 import           Data.Maybe               (fromMaybe)
 import           System.Environment       (lookupEnv)
 import           Text.Parser.Char         (notChar, string)
 import           Text.Trifecta            (ErrInfo (..), Parser, Result (..),
-                                           eof, parseString)
+                                           eof, parseByteString)
 
-autoDeref :: String -> CmScope -> String
+autoDeref :: ByteString -> CmScope -> ByteString
 autoDeref name s = fromMaybe name $ readVariable name s
 
-braced :: String -> String -> Maybe String
+braced :: ByteString -> ByteString -> Maybe ByteString
 braced tok arg
-  | not $ (tok ++ "{") `isPrefixOf` arg = Nothing
-  | not $ "}" `isSuffixOf` arg = Nothing
-  | otherwise = pure $ init $ drop (length tok + 1) arg
+  | not $ BS.append tok "{" `BS.isPrefixOf` arg = Nothing
+  | not $ "}" `BS.isSuffixOf` arg = Nothing
+  | otherwise = pure $ BS.init $ BS.drop (BS.length tok + 1) arg
 
-expandArguments :: Arguments -> CmScope -> IO (Maybe [String])
+expandArguments :: Arguments -> CmScope -> IO (Maybe [ByteString])
 expandArguments [] _  = pure $ Just []
 expandArguments (x:xs) s = expandArgument x s >>= maybe (pure Nothing) (\c -> (c++) <$$> expandArguments xs s)
 
-expandArgument :: Argument -> CmScope -> IO (Maybe [String])
+expandArgument :: Argument -> CmScope -> IO (Maybe [ByteString])
 expandArgument  (str, BracketArgument) _ = pure $ Just [str]
 expandArgument (str, QuotedArgument) s   = fmap (:[]) <$> expandString str s
 expandArgument (str, UnquotedArgument) s = fmap splitCmList <$> expandString str s
 
 
-expandString :: String -> CmScope -> IO (Maybe String)
-expandString str s = case parseString (expandingArgParse s) mempty str of
+expandString :: ByteString -> CmScope -> IO (Maybe ByteString)
+expandString str s = case parseByteString (expandingArgParse s) mempty str of
     Success expanded           -> Just <$> expanded
     Failure ErrInfo{_errDoc} ->
-      cmFormattedError FatalError Nothing ("Syntax error in cmake code\n" ++ show _errDoc) unknownLocation $> Nothing
+      cmFormattedError FatalError Nothing ["Syntax error in cmake code\n", BS.pack $ show _errDoc] unknownLocation $> Nothing
 
-expandingArgParse :: CmScope -> Parser (IO String)
+expandingArgParse :: CmScope -> Parser (IO ByteString)
 expandingArgParse s = mconcat <$> many (notRef <|> ref <|> dollarLit) <* eof
   where
-    notRef :: Parser (IO String)
-    notRef = pure <$> some (notChar '$')
+    notRef :: Parser (IO ByteString)
+    notRef = pure . BS.pack <$> some (notChar '$')
     ref = flip expandVarRef s <$> AST.variableReference
-    dollarLit :: Parser (IO String)
-    dollarLit = pure <$> string "$"
+    dollarLit :: Parser (IO ByteString)
+    dollarLit = pure . BS.pack <$> string "$"
 
-expandVarRef :: VariableReference -> CmScope -> IO String
+expandVarRef :: VariableReference -> CmScope -> IO ByteString
 expandVarRef (VariableReference l sections) s = (\n -> expandVarRef' l n s) =<< varName
   where
-    varName :: IO String
+    varName :: IO ByteString
     varName = mconcat $ flipM expandVarRefSect (pure s) sections
     flipM :: Monad m => (a -> b -> c) -> m b -> m a -> m c
     flipM f a b = liftM2 (flip f) a b
 
-expandVarRef' :: VariableLookup -> String -> CmScope -> IO String
+expandVarRef' :: VariableLookup -> ByteString -> CmScope -> IO ByteString
 expandVarRef' Scope name s = pure $ fromMaybe "" $ readVariable name s
 expandVarRef' Cache _ _    = pure "" -- Cache does not exist in script mode
-expandVarRef' Env name _   = fromMaybe "" <$> lookupEnv name
+expandVarRef' Env name _   = BS.pack . fromMaybe "" <$> lookupEnv (BS.unpack name)
 
-expandVarRefSect :: VariableReferenceSection -> CmScope -> IO String
+expandVarRefSect :: VariableReferenceSection -> CmScope -> IO ByteString
 expandVarRefSect (IdentifierSection str) _ = pure str
 expandVarRefSect (NestedReference nr) s    = expandVarRef nr s
 
 applyFuncArgs :: Arguments -> Arguments -> CmScope
 applyFuncArgs fa ia = setVariable "ARGV" (joinCmList $ fst <$> ia)
-                    $ setVariable "ARGC" (show $ length ia)
+                    $ setVariable "ARGC" (BS.pack $ show $ length ia)
                     $ setVariable "ARGN" (joinCmList $ drop (length fa) (fst <$> ia))
                     $ ffoldl' (uncurry setVariable) (zip (fst <$> fa) (fst <$> ia))
-                    $ ffoldl' (\(i,v) -> setVariable ("ARGV" ++ show i) v) (zip [(0 :: Int)..] (fst <$> ia)) emptyScope
+                    $ ffoldl' (\(i,v) -> setVariable (BS.append "ARGV" (BS.pack (show i))) v) (zip [(0 :: Int)..] (fst <$> ia)) emptyScope
   where
     ffoldl' :: (a -> b -> b) -> [a] -> b -> b
     ffoldl' r = flip (foldl' (flip r))

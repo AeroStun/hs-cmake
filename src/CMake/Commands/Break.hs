@@ -9,7 +9,7 @@
 --
 -- CMake `break` command
 ----------------------------------------------------------------------------
-
+{-# LANGUAGE OverloadedStrings #-}
 module CMake.Commands.Break (cmBreak) where
 
 import           CMake.Error             (CmErrorKind (FatalError),
@@ -22,7 +22,7 @@ import           CMake.Interpreter.State (CmBuiltinCommand,
 
 cmBreak :: CmBuiltinCommand
 cmBreak [] callSite CmState{currentScope=CmScope{loopDepth=0}} =
-    Nothing <$ cmFormattedError FatalError (Just "break") "A BREAK command was found outside of a proper FOREACH or WHILE loop scope." callSite
+    Nothing <$ cmFormattedError FatalError (Just "break") ["A BREAK command was found outside of a proper FOREACH or WHILE loop scope."] callSite
 cmBreak [] _ s = pure $ Just s{evading=Break}
 cmBreak _ callSite _ =
-    Nothing <$ cmFormattedError FatalError (Just "break") "The BREAK command does not accept any arguments." callSite
+    Nothing <$ cmFormattedError FatalError (Just "break") ["The BREAK command does not accept any arguments."] callSite

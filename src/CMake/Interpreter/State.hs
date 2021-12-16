@@ -30,11 +30,12 @@ module CMake.Interpreter.State (
   exitLoop,
   ) where
 import           CMake.AST.Defs
-import           Control.Applicative  ((<|>))
-import           Data.CaseInsensitive (CI)
-import qualified Data.CaseInsensitive as CI
-import           Data.HashMap.Strict  (HashMap, delete, insert, member, (!?))
-import qualified Data.HashMap.Strict  as HMap (empty)
+import           Control.Applicative   ((<|>))
+import           Data.ByteString       (ByteString)
+import           Data.CaseInsensitive  (CI)
+import qualified Data.CaseInsensitive  as CI
+import           Data.HashMap.Strict   (HashMap, delete, insert, member, (!?))
+import qualified Data.HashMap.Strict   as HMap (empty)
 
 -- | interpreter state
 data CmState = CmState { currentScope :: CmScope
@@ -44,7 +45,7 @@ data CmState = CmState { currentScope :: CmScope
 
 data Evasion = None | Return | Break | Continue deriving (Eq, Show)
 
-type VarMap = HashMap String String
+type VarMap = HashMap ByteString ByteString
 
 -- | variable scope
 data CmScope = CmScope { scopeIntroducer :: Maybe CommandInvocation
@@ -53,7 +54,7 @@ data CmScope = CmScope { scopeIntroducer :: Maybe CommandInvocation
                        , loopDepth       :: Int
                        } deriving Show
 
-type CommandMap = HashMap (CI String) CmCommand
+type CommandMap = HashMap (CI ByteString) CmCommand
 
 -- | invocable function
 data CmCommand = CmFunction ScopeBlock
@@ -65,7 +66,7 @@ instance Show CmCommand where
   show (CmMacro s)          = "(CmMacro " ++ show s ++ ")"
   show (CmBuiltinCommand _) = "<builtin>"
 
-type CmBuiltinCommand =  [String] -> SourceLocation -> CmState -> IO (Maybe CmState)
+type CmBuiltinCommand =  [ByteString] -> SourceLocation -> CmState -> IO (Maybe CmState)
 
 -- | empty state
 emptyState :: CmState
@@ -76,7 +77,7 @@ emptyScope :: CmScope
 emptyScope = CmScope Nothing HMap.empty Nothing 0
 
 -- | checks the existence of a variable in the current scope and above
-hasVariable :: String -> CmScope -> Bool
+hasVariable :: ByteString -> CmScope -> Bool
 hasVariable name CmScope{scopeVars, scopeParent} = name `member` scopeVars || searchNext scopeParent
   where
     searchNext :: Maybe CmScope -> Bool
@@ -84,23 +85,23 @@ hasVariable name CmScope{scopeVars, scopeParent} = name `member` scopeVars || se
     searchNext (Just scope) = hasVariable name scope
 
 -- | read a variable's value in the current scope and above
-readVariable :: String -> CmScope -> Maybe String
+readVariable :: ByteString -> CmScope -> Maybe ByteString
 readVariable name CmScope{scopeVars, scopeParent} = (scopeVars !? name) <|> searchNext scopeParent
    where
-     searchNext :: Maybe CmScope -> Maybe String
+     searchNext :: Maybe CmScope -> Maybe ByteString
      searchNext Nothing      = Nothing
      searchNext (Just scope) = readVariable name scope
 
 -- | set a variable's value in the current scope
-setVariable :: String -> String -> CmScope -> CmScope
+setVariable :: ByteString -> ByteString -> CmScope -> CmScope
 setVariable name value s@CmScope{scopeVars} =  s{scopeVars=insert name value scopeVars}
 
 -- | unset a variable's value in the current scope
-unsetVariable :: String -> CmScope -> CmScope
+unsetVariable :: ByteString -> CmScope -> CmScope
 unsetVariable name s@CmScope{scopeVars} =  s{scopeVars=delete name scopeVars}
 
 -- | registers a command by name in the state
-registerCommand :: String -> CmCommand -> CmState -> CmState
+registerCommand :: ByteString -> CmCommand -> CmState -> CmState
 registerCommand name cmd s@CmState{commands} = s{commands=insert (CI.mk name) cmd commands}
 
 pushScope :: CmScope -> CmState -> CmState

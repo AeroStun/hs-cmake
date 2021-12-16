@@ -9,14 +9,17 @@
 --
 -- Error management utilities
 ----------------------------------------------------------------------------
+{-# LANGUAGE OverloadedStrings #-}
 module CMake.Error (
   CmError(..),
   CmErrorKind(..),
   cmFormattedError,
   raiseArgumentCountError
   ) where
-import           CMake.AST.Defs (SourceLocation)
-import           System.IO      (hPutStrLn, stderr)
+import           CMake.AST.Defs        (SourceLocation)
+import           Data.ByteString       (ByteString)
+import qualified Data.ByteString.Char8 as BS
+import           System.IO             (stderr)
 
 data CmError = CmError CmErrorKind String
 data CmErrorKind = FatalError
@@ -33,28 +36,28 @@ instance Show CmErrorKind where
   show AuthorWarning      = "Warning (dev)"
   show DeprecationWarning = "Deprecation Warning"
 
-suffix :: CmErrorKind -> Maybe String
+suffix :: CmErrorKind -> Maybe ByteString
 suffix AuthorWarning = Just "This warning is for project developers."
 suffix _             = Nothing
 
-cmFormattedError :: CmErrorKind -> Maybe String -> String -> SourceLocation -> IO ()
-cmFormattedError kind source msg loc = hPutStrLn stderr fmtd
+cmFormattedError :: CmErrorKind -> Maybe ByteString -> [ByteString] -> SourceLocation -> IO ()
+cmFormattedError kind source msg loc = BS.hPutStrLn stderr fmtd
   where
-    fmtd :: String
-    fmtd = "CMake "
-           ++ show kind
-           ++ " at " ++ show loc
-           ++ maybe "" (\s -> " (" ++ s ++ ")") source
-           ++":\n  "
-           ++ concat (("  "++) <$> lines msg)
-           ++ maybe "" ('\n':) (suffix kind)
+    fmtd :: ByteString
+    fmtd = mconcat [ "CMake "
+                   , BS.pack (show kind)
+                   , " at ", BS.pack (show loc)
+                   , maybe "" (\s -> mconcat [" (", s, ")"]) source
+                   , ":\n  "
+                   , mconcat (BS.append "  " <$> BS.lines (mconcat msg))
+                   , maybe "" (BS.cons '\n') (suffix kind)]
 
-raiseArgumentCountError :: String -> SourceLocation -> IO (Maybe t)
+raiseArgumentCountError :: ByteString -> SourceLocation -> IO (Maybe t)
 raiseArgumentCountError funcName callSite = Nothing <$ doPrint
   where
     doPrint :: IO ()
     doPrint = cmFormattedError
                 FatalError
                 (Just funcName)
-                (funcName ++ " called with incorrect number of arguments")
+                [funcName, " called with incorrect number of arguments"]
                 callSite

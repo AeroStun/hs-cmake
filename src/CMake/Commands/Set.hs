@@ -9,8 +9,8 @@
 --
 -- CMake `set` command
 ----------------------------------------------------------------------------
-{-# LANGUAGE NamedFieldPuns #-}
-
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
 module CMake.Commands.Set (set) where
 import           CMake.AST.Defs              (SourceLocation)
 import           CMake.Error                 (CmErrorKind (..),
@@ -20,6 +20,8 @@ import           CMake.Interpreter.Arguments (braced)
 import           CMake.Interpreter.State     (CmBuiltinCommand, CmScope (..),
                                               CmState (..), setVariable)
 import           CMake.List                  (joinCmList)
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString.Char8       as BS
 import           Data.Functor                (($>))
 import qualified System.Environment          as Sys (setEnv)
 
@@ -32,20 +34,20 @@ set (name : values) _ s@CmState{currentScope}
   | last values /= "PARENT_SCOPE" =
       pure $ Just s{currentScope=set' name values currentScope}
 set (name : _) callSite s@CmState{currentScope=CmScope{scopeParent=Nothing}} =
-  Just s <$ cmFormattedError AuthorWarning (Just "set") (" Cannot set \"" ++ name ++ "\": current scope has no parent.") callSite
+  Just s <$ cmFormattedError AuthorWarning (Just "set") [" Cannot set \"", name, "\": current scope has no parent."] callSite
 set (name : values) _ s@CmState{currentScope=CmScope{scopeParent=Just scope}} =
   pure $ Just s{currentScope=(currentScope s){scopeParent=Just $ set' name values scope}}
 
-set' :: String -> [String] -> CmScope -> CmScope
+set' :: ByteString -> [ByteString] -> CmScope -> CmScope
 set' name values = setVariable name (joinCmList values)
 
-setEnv :: String -> [String] -> SourceLocation -> IO ()
-setEnv name [] _       = Sys.setEnv name ""
-setEnv name [value] _  = Sys.setEnv name value
+setEnv :: ByteString -> [ByteString] -> SourceLocation -> IO ()
+setEnv name [] _       = Sys.setEnv (BS.unpack name) ""
+setEnv name [value] _  = Sys.setEnv (BS.unpack name) (BS.unpack value)
 setEnv name (value : sndVal : _) callSite = setEnv name [value] callSite <* warn
   where
     warn :: IO ()
     warn = cmFormattedError AuthorWarning (Just "set") warning callSite
-    warning :: String
-    warning = "Only the first value argument is used when setting an environment variable.\nArgument '" ++ sndVal ++ "' and later are unused."
+    warning :: [ByteString]
+    warning = ["Only the first value argument is used when setting an environment variable.\nArgument '", sndVal, "' and later are unused."]
 

@@ -9,7 +9,7 @@
 --
 -- CMake `continue` command
 ----------------------------------------------------------------------------
-
+{-# LANGUAGE OverloadedStrings #-}
 module CMake.Commands.Continue (cmContinue) where
 
 import           CMake.Error             (CmErrorKind (FatalError),
@@ -22,7 +22,7 @@ import           CMake.Interpreter.State (CmBuiltinCommand,
 
 cmContinue :: CmBuiltinCommand
 cmContinue [] callSite CmState{currentScope=CmScope{loopDepth=0}} =
-    Nothing <$ cmFormattedError FatalError (Just "continue") "A CONTINUE command was found outside of a proper FOREACH or WHILE loop scope." callSite
+    Nothing <$ cmFormattedError FatalError (Just "continue") ["A CONTINUE command was found outside of a proper FOREACH or WHILE loop scope."] callSite
 cmContinue [] _ s = pure $ Just s{evading=Continue}
 cmContinue _ callSite _ =
-    Nothing <$ cmFormattedError FatalError (Just "continue") "The CONTINUE command does not accept any arguments." callSite
+    Nothing <$ cmFormattedError FatalError (Just "continue") ["The CONTINUE command does not accept any arguments."] callSite

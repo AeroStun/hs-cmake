@@ -10,6 +10,7 @@
 -- Parsing rules for CMake condition syntax
 -- See https://cmake.org/cmake/help/latest/command/if.html
 ----------------------------------------------------------------------------
+{-# LANGUAGE OverloadedStrings #-}
 module CMake.Cond.Parser (
   Cond(..),
   UnaryOp(..),
@@ -19,11 +20,12 @@ module CMake.Cond.Parser (
 import           CMake.Cond.Defs         (BinaryOp (..), Cond (..),
                                           UnaryOp (..), falsy, truthy)
 import           Control.Applicative     ((<|>))
+import           Data.ByteString         (ByteString)
 import           Data.Functor            (($>))
 import           ParserT                 (ParserT, chainl1, item, satisfy, tok)
 import           Text.Parser.Combinators (between)
 
-type ArgParser a = ParserT String a
+type ArgParser a = ParserT ByteString a
 
 -- | Map token to a constant
 (-$>) :: Eq t => t -> r -> ParserT t r
@@ -33,13 +35,13 @@ tk -$> c = tok tk $> c
 constant :: ArgParser Cond
 constant = Constant <$> ((satisfy truthy $> True) <|> (satisfy falsy $> False))
 
-infixOp :: String -> (Cond -> Cond -> Cond) -> ArgParser (Cond -> Cond -> Cond)
+infixOp :: ByteString -> (Cond -> Cond -> Cond) -> ArgParser (Cond -> Cond -> Cond)
 infixOp x f = tok x >> return f
 
-prefixOp :: String -> (Cond -> Cond) -> ArgParser Cond
+prefixOp :: ByteString -> (Cond -> Cond) -> ArgParser Cond
 prefixOp t f = tok t *> (f <$> factor)
 
--- | Arguments parser for a CMake condition 
+-- | Arguments parser for a CMake condition
 condition :: ArgParser Cond
 condition = expr
 

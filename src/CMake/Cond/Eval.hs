@@ -9,8 +9,9 @@
 --
 -- Conditional tree evaluation
 ----------------------------------------------------------------------------
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TupleSections  #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections     #-}
 
 module CMake.Cond.Eval (evalCond) where
 import           CMake.AST.Defs              (VariableLookup (..))
@@ -23,6 +24,8 @@ import           CMake.List                  (splitCmList)
 import           Control.Applicative         (Alternative, many, (<|>))
 import           Control.Exception           (IOException, catch)
 import           Control.Monad               (liftM2)
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString.Char8       as BS
 import qualified Data.CaseInsensitive        as CI (mk)
 import           Data.Functor                (($>))
 import           Data.HashMap.Strict         (member)
@@ -33,9 +36,10 @@ import           System.Directory            (doesDirectoryExist, doesPathExist,
 import           System.Environment          (lookupEnv)
 import           System.FilePath             (isAbsolute)
 import           Text.Parser.Combinators     (manyTill, try)
-import           Text.Read                   (readMaybe)
 import           Text.Trifecta               (Parser, Result (..), anyChar,
-                                              char, eof, parseString, string)
+                                              char, eof, parseByteString,
+                                              string)
+
 
 evalCond :: Cond -> CmState -> IO Bool
 evalCond (Parenthesized cond)  s = evalCond cond s
@@ -47,35 +51,35 @@ evalCond (UnaryOp op arg)      s = evalUnary op arg s
 evalCond (Constant b)          _ = pure b
 evalCond (VariableOrString n)  CmState{currentScope} = pure $ maybe True truthy (readVariable n currentScope)
 
-evalUnary :: UnaryOp -> String -> CmState -> IO Bool
+evalUnary :: UnaryOp -> ByteString -> CmState -> IO Bool
 evalUnary Command     a CmState{commands}     = pure $ member (CI.mk a) commands
 evalUnary Policy      _ _                     = putStrLn "Unsupported check POLICY" $> False
 evalUnary Target      _ _                     = pure False -- Targets do not exist in script mode
 evalUnary Test        _ _                     = pure False -- Tests do not exist in script mode
 evalUnary Defined     a CmState{currentScope} =
-    case parseString definedLookup mempty a of
+    case parseByteString definedLookup mempty a of
       Success (Scope, n) -> pure $ hasVariable n currentScope
-      Success (Env, n)   -> isJust <$> lookupEnv n
+      Success (Env, n)   -> isJust <$> lookupEnv (BS.unpack n)
       Success (Cache, _) -> pure False -- Cache does not exist in script mode
       _                  -> error "Internal parsing failure" -- may not fail
-evalUnary Exists      a _                     = doesPathExist a
-evalUnary IsDirectory a _                     = doesDirectoryExist a
-evalUnary IsSymlink   a _                     = catch (pathIsSymbolicLink a) ((const $ pure False) :: IOException -> IO Bool)
-evalUnary IsAbsolute  a _                     = pure $ isAbsolute a
+evalUnary Exists      a _                     = doesPathExist (BS.unpack a)
+evalUnary IsDirectory a _                     = doesDirectoryExist $ BS.unpack a
+evalUnary IsSymlink   a _                     = catch (pathIsSymbolicLink $ BS.unpack a) ((const $ pure False) :: IOException -> IO Bool)
+evalUnary IsAbsolute  a _                     = pure $ isAbsolute $ BS.unpack a
 
 
-definedLookup :: Parser (VariableLookup, String)
-definedLookup = (Env,)   <$> try (string "ENV{" *> someTill anyChar (char '}' <* eof))
-           <|> (Cache,) <$> try (string "CACHE{" *> someTill anyChar (char '}' <* eof))
-           <|> (Scope,) <$> many anyChar
+definedLookup :: Parser (VariableLookup, ByteString)
+definedLookup = (Env,) . BS.pack  <$> try (string "ENV{" *> someTill anyChar (char '}' <* eof))
+           <|> (Cache,) . BS.pack <$> try (string "CACHE{" *> someTill anyChar (char '}' <* eof))
+           <|> (Scope,) . BS.pack <$> many anyChar
     where
       someTill :: (Monad m, Alternative m) => m a -> m b -> m [a]
       someTill p e = liftM2 (:) p (manyTill p e)
 
 
-evalBinary :: BinaryOp -> String -> String -> CmScope -> IO Bool
+evalBinary :: BinaryOp -> ByteString -> ByteString -> CmScope -> IO Bool
 evalBinary InList              l r s = pure $ maybe False (\ls -> autoDeref l s `elem` splitCmList ls) (readVariable r s)
-evalBinary IsNewerThan         l r _ = catch (liftM2 (>=) (getModificationTime l) (getModificationTime r)) ((const $ pure True) :: IOException -> IO Bool)
+evalBinary IsNewerThan         l r _ = catch (liftM2 (>=) (getModificationTime $ BS.unpack l) (getModificationTime $ BS.unpack r)) ((const $ pure True) :: IOException -> IO Bool)
 evalBinary Matches             _ _ _ = putStrLn "Unsupported check MATCHES" $> False
 evalBinary Less                l r s = binaryAutoDeref (<) readMaybeInt l r s
 evalBinary Greater             l r s = binaryAutoDeref (>) readMaybeInt l r s
@@ -93,8 +97,9 @@ evalBinary VersionEqual        _ _ _ = putStrLn "Unsupported check VERSION_EQUAL
 evalBinary VersionLessEqual    _ _ _ = putStrLn "Unsupported check VERSION_LESS_EQUAL" $> False
 evalBinary VersionGreaterEqual _ _ _ = putStrLn "Unsupported check VERSION_GREATER_EQUAL" $> False
 
-binaryAutoDeref :: Monad m => (a -> a -> Bool) -> (String -> Maybe a) -> String -> String -> CmScope -> m Bool
+binaryAutoDeref :: Monad m => (a -> a -> Bool) -> (ByteString -> Maybe a) -> ByteString -> ByteString -> CmScope -> m Bool
 binaryAutoDeref o m l r s = return $ fromMaybe False $ liftM2 o (m (autoDeref l s)) (m (autoDeref r s))
 
-readMaybeInt = readMaybe :: String -> Maybe Int
+readMaybeInt :: ByteString -> Maybe Int
+readMaybeInt bs = case BS.readInt bs of Just (v, "") -> Just v; _ -> Nothing
 
