@@ -60,7 +60,6 @@ list ("INSERT" : list : index : args) callsite s@CmState{currentScope} = case iR
     where
         iRes = readMaybe $ BS.unpack index
         (begining, end) = splitAt (fromJust iRes) $ getList list currentScope
-    (REMOVE_AT), (REMOVE_DUPLICATES), (REVERSE)
 list ("POP_BACK" : list : args) callsite s@CmState{currentScope} =
     Just s <$ cmFormattedError FatalError (Just "list") ["Not implemented"] callsite
 list ("POP_FRONT" : list : args) callsite s@CmState{currentScope} =
