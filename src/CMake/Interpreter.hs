@@ -161,6 +161,7 @@ cmPrelude :: CmState
 cmPrelude = registerCommand "cmake_policy" (CmBuiltinCommand cmakePolicy)
           $ registerCommand "file" (CmBuiltinCommand file)
           $ registerCommand "math" (CmBuiltinCommand math)
+          $ registerCommand "list" (CmBuiltinCommand list)
           $ registerCommand "string" (CmBuiltinCommand string)
           $ registerCommand "message" (CmBuiltinCommand simpleMessage)
           $ registerCommand "dbg_printvar" (CmBuiltinCommand dbgPrintvar)

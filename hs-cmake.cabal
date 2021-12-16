@@ -33,6 +33,7 @@ library
       CMake.Commands.CMakePolicy
       CMake.Commands.Continue
       CMake.Commands.File
+      CMake.Commands.List
       CMake.Commands.Math
       CMake.Commands.Return
       CMake.Commands.Set
