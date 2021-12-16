@@ -113,9 +113,6 @@ processForeach (ScopeBlock (CommandInvocation _ (_ : ("IN", _) : ("ZIP_LISTS", _
 processForeach b@(ScopeBlock (CommandInvocation _ ((var, _) : vals) _) _ _) s =
     processListForeach var (fst <$> vals) b s
 
-readMaybeInt :: ByteString -> Maybe Int
-readMaybeInt bs = case BS.readInt bs of Just (v, "") -> Just v; _ -> Nothing
-
 processListForeach :: ByteString -> [ByteString] -> ScopeBlock -> CmState -> IO (Maybe CmState)
 processListForeach _ [] _ s = pure $ Just s
 processListForeach v xs b s@CmState{evading=Continue} = processListForeach v xs b s{evading=None}
