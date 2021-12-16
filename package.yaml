@@ -60,3 +60,6 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - hs-cmake
+    - stringsearch
+    - QuickCheck
+    - quickcheck-instances

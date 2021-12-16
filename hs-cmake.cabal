@@ -108,7 +108,8 @@ test-suite hs-cmake-test
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      QuickCheck
+    , base >=4.7 && <5
     , bytestring
     , case-insensitive
     , containers
@@ -120,6 +121,7 @@ test-suite hs-cmake-test
     , monad-loops
     , parsers
     , prettyprinter
+    , quickcheck-instances
     , stringsearch
     , transformers
     , trifecta
