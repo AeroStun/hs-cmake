@@ -25,14 +25,12 @@ list ("GET" : list : rest) callsite s@CmState{currentScope}
         let
             listA = getList list currentScope
             listL = length listA
-            indiciesLength = length rest - 1
-            indicies = map (readMaybe . BS.unpack) (take indiciesLength rest)
+            indicies = map (readMaybe . BS.unpack) (init rest)
             outputVar = last rest
         in
             if all isJust indicies && not (null listA)
                 then pure $ Just s{currentScope=setVariable outputVar (joinCmList [listA !! mod (fromJust index) listL | index <- indicies]) currentScope}
                 else raiseArgumentCountError (BS.pack "Invalid arguments for list Get") callsite
-                    --Just s <$ cmFormattedError FatalError (Just "string") "Invalid arguments for list Get" callsite
     | otherwise = raiseArgumentCountError "list GET" callsite
 list ["JOIN" , list , glue, outputVar] callsite s@CmState{currentScope} =
     pure $ Just s{currentScope=setVariable outputVar (BS.intercalate glue listItems) currentScope}
@@ -46,7 +44,7 @@ list ["SUBLIST" , list , begin, length, outputVar] callsite s@CmState{currentSco
         listA = getList list currentScope
     in
         if isNothing lengthI || isNothing beginI
-            then Just s <$ cmFormattedError FatalError (Just "list") ["Cannot SUBLIST as length or begining index can't be parsed."] callsite
+            then Nothing <$ cmFormattedError FatalError (Just "list") ["Cannot SUBLIST as length or begining index can't be parsed."] callsite
             else if justLength == -1
                 then pure $ Just s{currentScope=setVariable outputVar (joinCmList $ drop justBegin listA) currentScope}
                 else pure $ Just s{currentScope=setVariable outputVar (joinCmList $ take justLength $ drop justBegin listA) currentScope}
@@ -55,21 +53,21 @@ list ["FIND" , list , value, outputVar] callsite s@CmState{currentScope} =
 list ("APPEND" : list : args) callsite s@CmState{currentScope} =
     pure $ Just s{currentScope=setVariable list (joinCmList $ getList list currentScope ++ args) currentScope}
 list ("INSERT" : list : index : args) callsite s@CmState{currentScope} = case iRes of
-    Nothing -> Just s <$ cmFormattedError FatalError (Just "list") ["Cannot INSERT as index can't be parsed."] callsite
+    Nothing -> Nothing <$ cmFormattedError FatalError (Just "list") ["Cannot INSERT as index can't be parsed."] callsite
     Just i -> pure $ Just s{currentScope=setVariable list (joinCmList $ begining ++ args ++ end) currentScope}
     where
         iRes = readMaybe $ BS.unpack index
         (begining, end) = splitAt (fromJust iRes) $ getList list currentScope
 list ("POP_BACK" : list : args) callsite s@CmState{currentScope} =
-    Just s <$ cmFormattedError FatalError (Just "list") ["Not implemented"] callsite
+    Nothing <$ cmFormattedError FatalError (Just "list") ["Not implemented"] callsite
 list ("POP_FRONT" : list : args) callsite s@CmState{currentScope} =
-    Just s <$ cmFormattedError FatalError (Just "list") ["Not implemented"] callsite
+    Nothing <$ cmFormattedError FatalError (Just "list") ["Not implemented"] callsite
 list ("REMOVE_AT" : list : args) callsite s@CmState{currentScope} =
-    Just s <$ cmFormattedError FatalError (Just "list") ["Not implemented"] callsite
+    Nothing <$ cmFormattedError FatalError (Just "list") ["Not implemented"] callsite
 list ("REMOVE_DUPLICATES" : list : args) callsite s@CmState{currentScope} =
-    Just s <$ cmFormattedError FatalError (Just "list") ["Not implemented"] callsite
+    Nothing <$ cmFormattedError FatalError (Just "list") ["Not implemented"] callsite
 list ("REVERSE" : list : args) callsite s@CmState{currentScope} =
-    Just s <$ cmFormattedError FatalError (Just "list") ["Not implemented"] callsite
+    Nothing <$ cmFormattedError FatalError (Just "list") ["Not implemented"] callsite
 list ("PREPEND" : list : args) callsite s@CmState{currentScope} =
     pure $ Just s{currentScope=setVariable list (joinCmList $ args ++ getList list currentScope ) currentScope}
 list ["PREPEND", list, item] callsite s@CmState{currentScope} =
