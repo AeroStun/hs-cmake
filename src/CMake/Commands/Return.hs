@@ -13,12 +13,13 @@
 module CMake.Commands.Return (cmReturn) where
 import           CMake.Error             (CmErrorKind (FatalError),
                                           cmFormattedError)
-import           CMake.Interpreter.State (CmBuiltinCommand, CmState (evading),
-                                          Evasion (Return))
+import           CMake.Interpreter.State (CmBuiltinCommand, Evasion (Return),
+                                          alt, evading)
+import           Control.Monad.IO.Class  (liftIO)
 
 cmReturn :: CmBuiltinCommand
-cmReturn [] _ s = pure $ Just s{evading=Return}
-cmReturn _ callSite _ = Nothing <$ printErr
+cmReturn [] _ = alt evading (const Return)
+cmReturn _ callSite = fail "" <* liftIO printErr
   where
     printErr :: IO ()
     printErr = cmFormattedError FatalError

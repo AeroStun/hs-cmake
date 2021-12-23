@@ -14,20 +14,25 @@ module CMake.Commands.File (file) where
 import           CMake.Error             (CmErrorKind (FatalError),
                                           cmFormattedError,
                                           raiseArgumentCountError)
-import           CMake.Interpreter.State (CmBuiltinCommand, CmState (..),
+import           CMake.Interpreter.State (CmBuiltinCommand, alt, currentScope,
                                           setVariable)
+import           Control.Monad.IO.Class  (liftIO)
 import qualified Data.ByteString.Char8   as BS
 import           System.Directory        (getFileSize, removeFile)
 import           System.IO               (IOMode (..), withFile)
 
 file :: CmBuiltinCommand
-file ["READ", f, var] _ s@CmState{currentScope=ps} = Just . (\c -> s{currentScope=setVariable var c ps}) <$> BS.readFile (BS.unpack f)
-file ["WRITE"] cs _ = raiseArgumentCountError "file" cs
-file ("WRITE" : f : strs) _ s = Just s <$ withFile (BS.unpack f) WriteMode (\h -> mapM_ (BS.hPutStr h) strs)
-file ["APPEND"] cs _ = raiseArgumentCountError "file" cs
-file ("APPEND" : f : strs) _ s = Just s <$ withFile (BS.unpack f) AppendMode (\h -> mapM_ (BS.hPutStr h) strs)
-file ("REMOVE" : fs) _ s = Just s <$ mapM_ (removeFile . BS.unpack) fs
-file ["SIZE", f, o] _ s@CmState{currentScope=ps} = Just . (\v -> s{currentScope=setVariable o v ps}) . BS.pack . show <$> getFileSize (BS.unpack f)
-file ("SIZE" : _ : _ : _) cs _ = raiseArgumentCountError "file" cs
+file ["READ", f, var] _ = do
+    v <- liftIO $ BS.readFile (BS.unpack f)
+    alt currentScope $ setVariable var v
+file ["WRITE"] cs = raiseArgumentCountError "file" cs
+file ("WRITE" : f : strs) _ = () <$ liftIO (withFile (BS.unpack f) WriteMode (\h -> mapM_ (BS.hPutStr h) strs))
+file ["APPEND"] cs = raiseArgumentCountError "file" cs
+file ("APPEND" : f : strs) _ = () <$ liftIO (withFile (BS.unpack f) AppendMode (\h -> mapM_ (BS.hPutStr h) strs))
+file ("REMOVE" : fs) _ = () <$ liftIO (mapM_ (removeFile . BS.unpack) fs)
+file ["SIZE", f, o] _ = do
+    size <- liftIO $ getFileSize (BS.unpack f)
+    alt currentScope $ setVariable o (BS.pack $ show size)
+file ("SIZE" : _ : _ : _) cs = raiseArgumentCountError "file" cs
 
-file _ cs _ = Nothing <$ cmFormattedError FatalError (Just "file") ["Unsupported/illegal operation"] cs
+file _ cs = liftIO $ () <$ cmFormattedError FatalError (Just "file") ["Unsupported/illegal operation"] cs

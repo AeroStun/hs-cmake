@@ -69,6 +69,7 @@ library
     , extra
     , filepath
     , monad-loops
+    , mtl
     , parsers
     , prettyprinter
     , stringsearch
@@ -96,6 +97,7 @@ executable hs-cmake-exe
     , filepath
     , hs-cmake
     , monad-loops
+    , mtl
     , parsers
     , prettyprinter
     , stringsearch
@@ -125,6 +127,7 @@ test-suite hs-cmake-test
     , filepath
     , hs-cmake
     , monad-loops
+    , mtl
     , parsers
     , prettyprinter
     , quickcheck-instances

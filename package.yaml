@@ -30,6 +30,7 @@ dependencies:
 - extra
 - filepath
 - monad-loops
+- mtl
 - parsers
 - prettyprinter
 - stringsearch

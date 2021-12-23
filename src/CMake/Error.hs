@@ -16,10 +16,12 @@ module CMake.Error (
   cmFormattedError,
   raiseArgumentCountError
   ) where
-import           CMake.AST.Defs        (SourceLocation)
-import           Data.ByteString       (ByteString)
-import qualified Data.ByteString.Char8 as BS
-import           System.IO             (stderr)
+import           CMake.AST.Defs          (SourceLocation)
+import           CMake.Interpreter.State (Interp)
+import           Control.Monad.IO.Class  (liftIO)
+import           Data.ByteString         (ByteString)
+import qualified Data.ByteString.Char8   as BS
+import           System.IO               (stderr)
 
 data CmError = CmError CmErrorKind String
 data CmErrorKind = FatalError
@@ -52,8 +54,8 @@ cmFormattedError kind source msg loc = BS.hPutStrLn stderr fmtd
                    , mconcat (BS.append "  " <$> BS.lines (mconcat msg))
                    , maybe "" (BS.cons '\n') (suffix kind)]
 
-raiseArgumentCountError :: ByteString -> SourceLocation -> IO (Maybe t)
-raiseArgumentCountError funcName callSite = Nothing <$ doPrint
+raiseArgumentCountError :: ByteString -> SourceLocation -> Interp ()
+raiseArgumentCountError funcName callSite = liftIO (ioError (userError "") <* doPrint)
   where
     doPrint :: IO ()
     doPrint = cmFormattedError

@@ -18,28 +18,28 @@ module CMake.Interpreter.Arguments (
   expandArguments,
   applyFuncArgs
   ) where
-import           CMake.AST.Defs           (Argument, ArgumentKind (..),
-                                           Arguments, VariableLookup (..),
-                                           VariableReference (..),
-                                           VariableReferenceSection (..),
-                                           unknownLocation)
-import qualified CMake.AST.Parser         as AST (variableReference)
-import           CMake.Error              (CmErrorKind (..), cmFormattedError)
-import           CMake.Interpreter.State  (CmScope (..), emptyScope,
-                                           readVariable, setVariable)
-import           CMake.List               (joinCmList, splitCmList)
-import           CMakeHs.Internal.Functor ((<$$>))
-import           Control.Applicative      (many, some, (<|>))
-import           Control.Monad            (liftM2)
-import           Data.ByteString          (ByteString)
-import qualified Data.ByteString.Char8    as BS
-import           Data.Foldable            (foldl')
-import           Data.Functor             (($>))
-import           Data.Maybe               (fromMaybe)
-import           System.Environment       (lookupEnv)
-import           Text.Parser.Char         (notChar, string)
-import           Text.Trifecta            (ErrInfo (..), Parser, Result (..),
-                                           eof, parseByteString)
+import           CMake.AST.Defs          (Argument, ArgumentKind (..),
+                                          Arguments, VariableLookup (..),
+                                          VariableReference (..),
+                                          VariableReferenceSection (..),
+                                          unknownLocation)
+import qualified CMake.AST.Parser        as AST (variableReference)
+import           CMake.Error             (CmErrorKind (..), cmFormattedError)
+import           CMake.Interpreter.State (CmScope (..), Interp, currentScope,
+                                          emptyScope, readVariable, sel,
+                                          setVariable)
+import           CMake.List              (joinCmList, splitCmList)
+import           Control.Applicative     (many, some, (<|>))
+import           Control.Monad           (liftM2)
+import           Control.Monad.IO.Class  (liftIO)
+import           Data.ByteString         (ByteString)
+import qualified Data.ByteString.Char8   as BS
+import           Data.Foldable           (foldl')
+import           Data.Maybe              (fromMaybe)
+import           System.Environment      (lookupEnv)
+import           Text.Parser.Char        (notChar, string)
+import           Text.Trifecta           (ErrInfo (..), Parser, Result (..),
+                                          eof, parseByteString)
 
 autoDeref :: ByteString -> CmScope -> ByteString
 autoDeref name s = fromMaybe name $ readVariable name s
@@ -50,21 +50,23 @@ braced tok arg
   | not $ "}" `BS.isSuffixOf` arg = Nothing
   | otherwise = pure $ BS.init $ BS.drop (BS.length tok + 1) arg
 
-expandArguments :: Arguments -> CmScope -> IO (Maybe [ByteString])
-expandArguments [] _  = pure $ Just []
-expandArguments (x:xs) s = expandArgument x s >>= maybe (pure Nothing) (\c -> (c++) <$$> expandArguments xs s)
+expandArguments :: Arguments -> Interp [ByteString]
+expandArguments []     = pure []
+expandArguments (x:xs) = expandArgument x >>= (\c -> (c++) <$> expandArguments xs)
 
-expandArgument :: Argument -> CmScope -> IO (Maybe [ByteString])
-expandArgument  (str, BracketArgument) _ = pure $ Just [str]
-expandArgument (str, QuotedArgument) s   = fmap (:[]) <$> expandString str s
-expandArgument (str, UnquotedArgument) s = fmap splitCmList <$> expandString str s
+expandArgument :: Argument -> Interp [ByteString]
+expandArgument (str, BracketArgument)  = pure [str]
+expandArgument (str, QuotedArgument)   = (:[]) <$> expandString str
+expandArgument (str, UnquotedArgument) = splitCmList <$> expandString str
 
 
-expandString :: ByteString -> CmScope -> IO (Maybe ByteString)
-expandString str s = case parseByteString (expandingArgParse s) mempty str of
-    Success expanded           -> Just <$> expanded
-    Failure ErrInfo{_errDoc} ->
-      cmFormattedError FatalError Nothing ["Syntax error in cmake code\n", BS.pack $ show _errDoc] unknownLocation $> Nothing
+expandString :: ByteString -> Interp ByteString
+expandString str = do
+    s <- sel currentScope
+    case parseByteString (expandingArgParse s) mempty str of
+      Success expanded           -> liftIO expanded
+      Failure ErrInfo{_errDoc} ->
+        liftIO $ fail "" <* cmFormattedError FatalError Nothing ["Syntax error in cmake code\n", BS.pack $ show _errDoc] unknownLocation
 
 expandingArgParse :: CmScope -> Parser (IO ByteString)
 expandingArgParse s = mconcat <$> many (notRef <|> ref <|> dollarLit) <* eof

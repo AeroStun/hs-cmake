@@ -21,7 +21,6 @@ import           Data.ByteString       (ByteString)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.CaseInsensitive  as CI
 import           Data.Char             (isDigit)
-import           Data.List             (isSuffixOf)
 
 data Cond = Parenthesized Cond
           | Or Cond Cond

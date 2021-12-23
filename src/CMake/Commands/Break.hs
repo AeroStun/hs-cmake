@@ -14,15 +14,17 @@ module CMake.Commands.Break (cmBreak) where
 
 import           CMake.Error             (CmErrorKind (FatalError),
                                           cmFormattedError)
-import           CMake.Interpreter.State (CmBuiltinCommand,
-                                          CmScope (CmScope, loopDepth),
-                                          CmState (CmState, currentScope, evading),
-                                          Evasion (Break))
+import           CMake.Interpreter.State (CmBuiltinCommand, CmScope (loopDepth),
+                                          Evasion (Break), alt, currentScope,
+                                          evading, sel)
+import           CMakeHs.Internal.Monad  (ifM)
+import           Control.Monad.IO.Class  (liftIO)
+import           Data.Functor            ((<&>))
 
 
 cmBreak :: CmBuiltinCommand
-cmBreak [] callSite CmState{currentScope=CmScope{loopDepth=0}} =
-    Nothing <$ cmFormattedError FatalError (Just "break") ["A BREAK command was found outside of a proper FOREACH or WHILE loop scope."] callSite
-cmBreak [] _ s = pure $ Just s{evading=Break}
-cmBreak _ callSite _ =
-    Nothing <$ cmFormattedError FatalError (Just "break") ["The BREAK command does not accept any arguments."] callSite
+cmBreak [] cs = ifM (sel currentScope <&> loopDepth <&> (/=0))
+                     (alt evading (const Break))
+                     (liftIO (() <$ cmFormattedError FatalError (Just "break") ["A BREAK command was found outside of a proper FOREACH or WHILE loop scope."] cs))
+cmBreak _ cs =
+     liftIO (() <$ cmFormattedError FatalError (Just "break") ["The BREAK command does not accept any arguments."] cs)

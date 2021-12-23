@@ -9,27 +9,29 @@
 --
 -- CMake `unset` command
 ----------------------------------------------------------------------------
-{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 module CMake.Commands.Unset (unset) where
 import           CMake.Error                 (CmErrorKind (..),
                                               cmFormattedError,
                                               raiseArgumentCountError)
 import           CMake.Interpreter.Arguments (braced)
-import           CMake.Interpreter.State     (CmBuiltinCommand, CmScope (..),
-                                              CmState (..), scopeParent,
+import           CMake.Interpreter.State     (CmBuiltinCommand, alt,
+                                              currentScope, parentScope, sel,
                                               unsetVariable)
+import           Control.Monad.IO.Class      (liftIO)
 import qualified Data.ByteString.Char8       as BS
 import           Data.Functor                (($>))
 import           System.Environment          (unsetEnv)
 
 
 unset :: CmBuiltinCommand
-unset [name] _ s@CmState{currentScope}
-  | Just envVar <- braced "ENV" name = unsetEnv (BS.unpack envVar) $> Just s
-  | otherwise = pure $ Just s{currentScope=unsetVariable name currentScope}
-unset [_, "CACHE"] _ s = pure $ Just s -- Cache does not exist in script mode
-unset [name, "PARENT_SCOPE"] callSite s@CmState{currentScope=CmScope{scopeParent}}
-  | Just parentScope <- scopeParent = pure $ Just s{currentScope=(currentScope s){scopeParent=Just $ unsetVariable name parentScope}}
-  | otherwise = Just s <$ cmFormattedError AuthorWarning (Just "unset") [" Cannot unset \"", name, "\": current scope has no parent."] callSite
-unset _ callSite _ = raiseArgumentCountError "unset" callSite
+unset [name] _
+  | Just envVar <- braced "ENV" name = liftIO $ unsetEnv (BS.unpack envVar) $> ()
+  | otherwise = alt currentScope (unsetVariable name)
+unset [_, "CACHE"] _ = pure () -- Cache does not exist in script mode
+unset [name, "PARENT_SCOPE"] cs = do
+    mps <- sel parentScope
+    case mps of
+      Just ps -> alt parentScope $ const $ Just $ unsetVariable name ps
+      Nothing -> liftIO $ () <$ cmFormattedError AuthorWarning (Just "unset") [" Cannot unset \"", name, "\": current scope has no parent."] cs
+unset _ callSite = raiseArgumentCountError "unset" callSite
