@@ -1,0 +1,18 @@
+cabal-version:       2.4
+name:                CmSys
+version:             0.1.0.0
+license:             Apache-2.0
+license-file:        LICENSE
+author:              AeroStun
+maintainer:          24841307+AeroStun@users.noreply.github.com
+
+library
+  exposed-modules:     CmSys, CmSys.HardLink, CmSys.SymLink
+  build-depends:       base, directory
+  if os(windows)
+      build-depends: Win32
+  else
+      build-depends: unix
+  hs-source-dirs:      ., CmSys
+  default-language:    Haskell2010
+

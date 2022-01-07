@@ -23,6 +23,12 @@ module CMake.Interpreter.State (
   parentScope,
   commands,
   evading,
+  trackDive,
+  trackAscent,
+  trackMany,
+  trackOne,
+  needsSkip,
+  popSkipRope,
   hasVariable,
   readVariable,
   altVariable,
@@ -94,11 +100,30 @@ commands = (S.gets commands_, \x -> S.modify (\s -> s{commands_=x}))
 evading :: InterpSel Evasion
 evading = (S.gets evading_, \x -> S.modify (\s -> s{evading_=x}))
 
+trackDive :: Interp ()
+trackDive = S.modify (\s@CmState{trackRope_=tr} -> s{trackRope_ = 0 : tr})
+
+trackAscent :: Interp ()
+trackAscent = S.modify (\s@CmState{trackRope_=tr} -> s{trackRope_ = tail tr})
+
+trackMany :: Int -> Interp ()
+trackMany n = S.modify (\s@CmState{trackRope_=tr} -> s{trackRope_ = (head tr + n) : tr})
+
+trackOne :: Interp ()
+trackOne = trackMany 1
+
+needsSkip :: Interp Bool
+needsSkip = S.gets (not . null . skipRope_)
+
+popSkipRope :: Interp Int
+popSkipRope = S.gets (head . skipRope_) <* S.modify (\s@CmState{skipRope_=sr} -> s{skipRope_ = tail sr})
 
 -- | Interpreter state
 data CmState = CmState { currentScope_ :: CmScope
                        , commands_     :: CommandMap
                        , evading_      :: Evasion
+                       , trackRope_    :: [Int]
+                       , skipRope_     :: [Int]
                        } deriving Show
 
 data Evasion = None | Return | Break | Continue deriving (Eq, Show)
@@ -128,7 +153,7 @@ type CmBuiltinCommand =  [ByteString] -> SourceLocation -> Interp ()
 
 -- | empty state
 emptyState :: CmState
-emptyState = CmState emptyScope HMap.empty None
+emptyState = CmState emptyScope HMap.empty None [] []
 
 -- | empty scope
 emptyScope :: CmScope

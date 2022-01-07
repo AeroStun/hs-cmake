@@ -12,7 +12,8 @@
 --
 -- Simple parser-combinator over a list of arbitrary token type
 ----------------------------------------------------------------------------
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module ParserT (
   ParserT(ParserT),
@@ -27,10 +28,13 @@ module ParserT (
   chainl,
   chainl1,
   parseList,
-  runParser
+  runParser,
+  -- Specialised ops
+  integral,
   ) where
-import           Control.Applicative (Alternative (..))
-import           Control.Monad       (MonadPlus (..), void)
+import           Control.Applicative   (Alternative (..))
+import           Control.Monad         (MonadPlus (..), void)
+import           Data.ByteString.Char8 (ByteString, readInt)
 
 
 -- | Simple parser for a given token-type and result-type
@@ -131,3 +135,18 @@ runParser m s =
     [(res, [])] -> res
     [(_, rest)] -> error $ "Parser did not consume entire stream. Left " ++ show rest
     _           -> error "Parser error."
+
+
+
+----------------------------
+-- Specialised Operations --
+----------------------------
+
+-- | Parse and decode an Int
+integral :: ParserT ByteString Int
+integral = item >>= readFullInt
+  where
+    readFullInt :: ByteString -> ParserT ByteString Int
+    readFullInt s = case readInt s of
+                      Just (i, "") -> pure i
+                      _            -> failure

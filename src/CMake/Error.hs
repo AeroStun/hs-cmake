@@ -14,6 +14,8 @@ module CMake.Error (
   CmError(..),
   CmErrorKind(..),
   cmFormattedError,
+  emitAuthorWarning,
+  raiseFatalError,
   raiseArgumentCountError
   ) where
 import           CMake.AST.Defs          (SourceLocation)
@@ -54,12 +56,11 @@ cmFormattedError kind source msg loc = BS.hPutStrLn stderr fmtd
                    , mconcat (BS.append "  " <$> BS.lines (mconcat msg))
                    , maybe "" (BS.cons '\n') (suffix kind)]
 
+emitAuthorWarning :: ByteString -> [ByteString] -> SourceLocation -> Interp ()
+emitAuthorWarning f s cs = liftIO $ () <$ cmFormattedError AuthorWarning (Just f) s cs
+
+raiseFatalError :: ByteString -> [ByteString] -> SourceLocation -> Interp a
+raiseFatalError f s cs = liftIO $ cmFormattedError FatalError (Just f) s cs *> ioError (userError "")
+
 raiseArgumentCountError :: ByteString -> SourceLocation -> Interp ()
-raiseArgumentCountError funcName callSite = liftIO (ioError (userError "") <* doPrint)
-  where
-    doPrint :: IO ()
-    doPrint = cmFormattedError
-                FatalError
-                (Just funcName)
-                [funcName, " called with incorrect number of arguments"]
-                callSite
+raiseArgumentCountError fn = raiseFatalError fn [fn, " called with incorrect number of arguments"]

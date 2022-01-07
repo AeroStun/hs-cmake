@@ -12,23 +12,24 @@
 {-# LANGUAGE BlockArguments    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module CMake.Interpreter (processFile, cmPrelude) where
+module CMake.Interpreter (processFile) where
 
 import           CMake.AST.Defs
-import           CMake.Commands
 import           CMake.Cond.Eval             (evalCond)
 import           CMake.Cond.Parser           (condition)
 import           CMake.Error                 (CmErrorKind (..),
                                               cmFormattedError,
                                               raiseArgumentCountError)
 import           CMake.Interpreter.Arguments (applyFuncArgs, expandArguments)
-import           CMake.Interpreter.State     (CmBuiltinCommand, CmCommand (..),
-                                              CmState, Evasion (..), Interp,
-                                              alt, commands, currentScope,
-                                              emptyState, enterLoop, evading,
-                                              exitLoop, popScope, pushScope,
+import           CMake.Interpreter.State     (CmCommand (..), Evasion (..),
+                                              Interp, alt, commands,
+                                              currentScope, enterLoop, evading,
+                                              exitLoop, needsSkip, popScope,
+                                              popSkipRope, pushScope,
                                               readVariable, registerCommand,
-                                              sel, setVariable, unsetVariable)
+                                              sel, setVariable, trackAscent,
+                                              trackDive, trackMany, trackOne,
+                                              unsetVariable)
 import           CMake.List                  (splitCmList)
 import           CMakeHs.Internal.Monad      (ifM)
 import           CMakeHs.Internal.Numeric    (readMaybeInt)
@@ -45,11 +46,18 @@ import           Data.HashMap.Strict         ((!?))
 import           Data.Maybe                  (fromMaybe)
 import           ParserT                     (parseList)
 
+
 processFile :: File -> Interp ()
 processFile = processStatements
 
 processStatements :: [Statement] -> Interp ()
-processStatements = foldr ((>>) . processStatement) (pure ())
+processStatements xs = ifM needsSkip popSkipRope (pure 0)
+                   >>= (\n -> trackDive
+                           >> trackMany n
+                           >> processStatements' (drop n xs)
+                           >> trackAscent)
+processStatements' :: [Statement] -> Interp ()
+processStatements' = foldr ((>>) . (\s -> processStatement s >> trackOne)) (pure ())
 
 processStatement :: Statement -> Interp ()
 processStatement stmt = ifM (sel evading <&> (/= None)) (pure ()) case stmt of
@@ -157,32 +165,12 @@ processInvocation (CommandInvocation (Identifier name) args callSite) = do
   case cmds !? CI.mk name of
     Just (CmFunction (ScopeBlock (CommandInvocation _ (_:fArgs) _) stmts _))
       | ((<) `on` void) args fArgs -> raiseArgumentCountError name callSite
-      | otherwise -> modify (pushScope (applyFuncArgs fArgs eargs)) >> processStatements stmts >> modify popScope
+      | otherwise -> modify (pushScope (applyFuncArgs fArgs eargs))
+                  >> alt currentScope (setVariable "CMAKE_CURRENT_FUNCTION" name)
+                  >> processStatements stmts
+                  >> modify popScope
     Just (CmMacro (ScopeBlock (CommandInvocation _ (_:fArgs) _) stmts _))
       | ((<) `on` void) args fArgs -> raiseArgumentCountError name callSite
       | otherwise -> processStatements stmts -- FIXME process macro args
     Just (CmBuiltinCommand bc) -> bc eargs callSite
-    _ -> liftIO $ fail "" <*  cmFormattedError FatalError (Just name) ["Unknown CMake command \"", name, "\"."] callSite
-
-
-cmPrelude :: CmState
-cmPrelude = registerCommand "cmake_policy" (CmBuiltinCommand cmakePolicy)
-          $ registerCommand "file" (CmBuiltinCommand file)
-          $ registerCommand "math" (CmBuiltinCommand math)
-          $ registerCommand "list" (CmBuiltinCommand list)
-          $ registerCommand "string" (CmBuiltinCommand string)
-          $ registerCommand "message" (CmBuiltinCommand simpleMessage)
-          $ registerCommand "dbg_printvar" (CmBuiltinCommand dbgPrintvar)
-          $ registerCommand "unset" (CmBuiltinCommand unset)
-          $ registerCommand "set" (CmBuiltinCommand set)
-          $ registerCommand "continue" (CmBuiltinCommand cmContinue)
-          $ registerCommand "break" (CmBuiltinCommand cmBreak)
-          $ registerCommand "return" (CmBuiltinCommand cmReturn) emptyState
-  where
-    dbgPrintvar :: CmBuiltinCommand
-    dbgPrintvar [name] _ = sel currentScope >>= ((\vv -> liftIO $ BS.putStrLn (mconcat [name, ": ", maybe "<unset>" (\v -> mconcat ["\"", v, "\""]) vv])) . readVariable name)
-    dbgPrintvar _ _ = fail ""
-
-    simpleMessage :: CmBuiltinCommand
-    simpleMessage [] _   = fail ""
-    simpleMessage msgs _ = liftIO $ () <$ BS.putStrLn (mconcat msgs)
+    _ -> liftIO $ cmFormattedError FatalError (Just name) ["Unknown CMake command \"", name, "\"."] callSite >> fail ""

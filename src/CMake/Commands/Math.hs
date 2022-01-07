@@ -10,46 +10,60 @@
 -- CMake `math` command
 ----------------------------------------------------------------------------
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TemplateHaskell   #-}
 module CMake.Commands.Math (math) where
 
-import           CMake.AST.Defs          (SourceLocation)
-import           CMake.Error             (CmErrorKind (FatalError),
-                                          cmFormattedError,
-                                          raiseArgumentCountError)
-import           CMake.Interpreter.State (CmBuiltinCommand, Interp, alt,
-                                          currentScope, setVariable)
-import           Control.Applicative     (many, (<|>))
-import           Control.Monad.IO.Class  (liftIO)
-import           Data.Bits               (complement, shiftL, shiftR, xor,
-                                          (.&.), (.|.))
-import           Data.ByteString         (ByteString)
-import qualified Data.ByteString.Char8   as BS
-import           Data.Int                (Int64)
-import           Numeric.Extra           (readDec, readHex, showHex)
-import           ParserT                 (ParserT (..), chainl1, parseList, tok,
-                                          toks)
-import           Text.Parser.Combinators (between)
+import           CMake.AST.Defs              (SourceLocation)
+import           CMake.Error                 (raiseArgumentCountError,
+                                              raiseFatalError)
+import           CMake.Interpreter.ArgsParse (ArgsParser, parseArgs, unaryArg,
+                                              unaryOpt)
+import           CMake.Interpreter.State     (CmBuiltinCommand, Interp, alt,
+                                              currentScope, setVariable)
+import           Control.Applicative         (many, (<|>))
+import           Data.Bits                   (complement, shiftL, shiftR, xor,
+                                              (.&.), (.|.))
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString.Char8       as BS
+import           Data.Functor                (($>))
+import           Data.Int                    (Int64)
+import           Data.Label                  (mkLabel)
+import           Numeric.Extra               (readDec, readHex, showHex)
+import           ParserT                     (ParserT (..), chainl1, item,
+                                              parseList, tok, toks)
+import           Text.Parser.Combinators     (between)
 
+data Base = Decimal | Hexadecimal deriving (Eq, Show)
+
+data MathArgs = MathArgs
+                { _var     :: ByteString
+                , _exprStr ::  ByteString
+                , _base    :: Base
+                } deriving Show
+mkLabel ''MathArgs
 
 math :: CmBuiltinCommand
-math ["EXPR", o, e] cs = math' o e Decimal cs
-math ["EXPR", o,  e, "OUTPUT_FORMAT", "HEXADECIMAL"] cs = math' o e Hexadecimal cs
-math ["EXPR", o, e, "OUTPUT_FORMAT", "DECIMAL"] cs = math' o e Decimal cs
+math ("EXPR" : xs) cs = parseArgs "math(EXPR)" xs parser baseArgs cs >>= flip math' cs
+  where
+    parser :: ArgsParser ByteString MathArgs ()
+    parser = unaryArg "variable" var (const item)
+          >> unaryArg "expression" exprStr (const item)
+          >> unaryOpt "OUTPUT_FORMAT" base (const $ tok "HEXADECIMAL" $> Hexadecimal <|> tok "DECIMAL" $> Decimal)
+    baseArgs = MathArgs mempty mempty Decimal
 math _ cs = raiseArgumentCountError "math" cs
-
-data Base = Decimal | Hexadecimal
 
 showBase :: Base -> Int64 -> ByteString
 showBase Decimal     v = BS.pack $ show v
 showBase Hexadecimal v = BS.pack $ "0x" ++ showHex v ""
 
-math' :: ByteString -> ByteString -> Base -> SourceLocation -> Interp ()
-math' o e b cs = math'' e cs >>= \v -> alt currentScope (setVariable o (showBase b v))
+math' :: MathArgs -> SourceLocation -> Interp ()
+math' MathArgs{..} cs = math'' _exprStr cs >>= \v -> alt currentScope (setVariable _var (showBase _base v))
 
 math'' :: ByteString -> SourceLocation -> Interp Int64
 math'' s cs = case eval s of
                 Just v -> pure v
-                Nothing -> liftIO $ fail "" <* cmFormattedError FatalError (Just "math") ["math cannot parse the expression"] cs
+                Nothing -> raiseFatalError "math" ["math cannot parse the expression"] cs
 
 eval :: ByteString -> Maybe Int64
 eval s = parseList (many (tok ' ') *> expr) (BS.unpack s)

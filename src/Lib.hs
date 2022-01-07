@@ -16,7 +16,8 @@ module Lib (
   runFile
   ) where
 import qualified CMake.AST.Parser        as AST
-import           CMake.Interpreter       (cmPrelude, processFile)
+import           CMake.InterpPrelude     (cmPrelude)
+import           CMake.Interpreter       (processFile)
 import           CMake.Interpreter.State (CmState (..), Interp, alt,
                                           currentScope, evalInterp, execInterp,
                                           setVariable)

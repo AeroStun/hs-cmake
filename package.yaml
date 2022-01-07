@@ -24,10 +24,14 @@ dependencies:
 - base16-bytestring
 - bytestring
 - case-insensitive
+- CmSys
 - containers
 - directory
 - either
+- exceptions
 - extra
+- fclabels
+- filelock
 - filepath
 - monad-loops
 - mtl

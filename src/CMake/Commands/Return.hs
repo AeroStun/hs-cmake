@@ -11,18 +11,11 @@
 ----------------------------------------------------------------------------
 {-# LANGUAGE OverloadedStrings #-}
 module CMake.Commands.Return (cmReturn) where
-import           CMake.Error             (CmErrorKind (FatalError),
-                                          cmFormattedError)
+import           CMake.Error             (raiseFatalError)
 import           CMake.Interpreter.State (CmBuiltinCommand, Evasion (Return),
                                           alt, evading)
-import           Control.Monad.IO.Class  (liftIO)
 
 cmReturn :: CmBuiltinCommand
 cmReturn [] _ = alt evading (const Return)
-cmReturn _ callSite = fail "" <* liftIO printErr
-  where
-    printErr :: IO ()
-    printErr = cmFormattedError FatalError
-                                (Just "return")
-                                ["The RETURN command does not accept any arguments"]
-                                callSite
+cmReturn _ cs = raiseFatalError "return" ["The RETURN command does not accept any arguments"] cs
+

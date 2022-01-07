@@ -14,6 +14,7 @@ module CMake.Commands (
   module CMake.Commands.CMakePolicy,
   module CMake.Commands.Continue,
   module CMake.Commands.File,
+  module CMake.Commands.Include,
   module CMake.Commands.List,
   module CMake.Commands.Math,
   module CMake.Commands.Return,
@@ -25,6 +26,7 @@ import           CMake.Commands.Break
 import           CMake.Commands.CMakePolicy
 import           CMake.Commands.Continue
 import           CMake.Commands.File
+import           CMake.Commands.Include
 import           CMake.Commands.List
 import           CMake.Commands.Math
 import           CMake.Commands.Return
